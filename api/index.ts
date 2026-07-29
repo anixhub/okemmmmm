@@ -679,22 +679,32 @@ app.post("/api/db-truncate-all", async (req, res) => {
   if (pool) {
     try {
       await pool.query("SET FOREIGN_KEY_CHECKS = 0");
+    } catch (e) {
+      console.warn("Could not disable FK checks:", e);
+    }
+
+    try {
       for (const table of tables) {
-        if (table === "app_credentials") {
-          await pool.query("DELETE FROM `app_credentials` WHERE `id` != 'superadmin'");
-        } else if (table === "periode") {
-          await pool.query("DELETE FROM `periode` WHERE `id` != 'Semua'");
-        } else if (table === "pesantren_profile") {
-          await pool.query(
-            "UPDATE `pesantren_profile` SET `nama_pesantren` = 'Pondok Pesantren Darussalam Al-Azhar', `nama_yayasan` = 'Yayasan Pendidikan Islam Darussalam' WHERE `id` = 'main'"
-          );
-        } else {
-          await pool.query(`TRUNCATE TABLE \`${table}\``);
+        try {
+          if (table === "app_credentials") {
+            await pool.query("DELETE FROM `app_credentials` WHERE `id` != 'superadmin'");
+          } else if (table === "periode") {
+            await pool.query("DELETE FROM `periode` WHERE `id` != 'Semua'");
+          } else if (table === "pesantren_profile") {
+            await pool.query(
+              "UPDATE `pesantren_profile` SET `nama_pesantren` = 'Pondok Pesantren Darussalam Al-Azhar', `nama_yayasan` = 'Yayasan Pendidikan Islam Darussalam' WHERE `id` = 'main'"
+            );
+          } else {
+            await pool.query(`DELETE FROM \`${table}\``);
+          }
+        } catch (tableErr: any) {
+          console.warn(`Error clearing table '${table}':`, tableErr.message);
         }
       }
-      await pool.query("SET FOREIGN_KEY_CHECKS = 1");
-    } catch (err: any) {
-      console.warn("Truncate error MySQL:", err.message);
+    } finally {
+      try {
+        await pool.query("SET FOREIGN_KEY_CHECKS = 1");
+      } catch (e) {}
     }
   }
 
@@ -705,7 +715,7 @@ app.post("/api/db-truncate-all", async (req, res) => {
     action: "truncate_all"
   });
 
-  return res.json({ success: true });
+  return res.json({ success: true, message: "Seluruh data telah berhasil dikosongkan." });
 });
 
 export default app;

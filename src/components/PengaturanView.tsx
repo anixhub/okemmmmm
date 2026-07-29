@@ -1006,30 +1006,37 @@ export default function PengaturanView({
           "Content-Type": "application/json"
         }
       });
-      const data = await res.json();
+      
+      let data: any = {};
+      const contentType = res.headers.get("content-type") || "";
+      if (contentType.includes("application/json")) {
+        data = await res.json().catch(() => ({}));
+      } else {
+        const text = await res.text().catch(() => "");
+        if (!res.ok) {
+          throw new Error(`Gagal mengosongkan database (${res.status}): ${text || "Kesalahan Server"}`);
+        }
+      }
+
       if (!res.ok || data.success === false) {
         throw new Error(data.error || "Gagal mengosongkan database.");
       }
 
-      // Clear local storage tables
-      const keysToClear = [
-        'smartsantri_lembagas',
-        'smartsantri_kelas',
-        'smartsantri_kompleks',
-        'smartsantri_kamar',
-        'smartsantri_rombel_categories',
-        'smartsantri_rombel_groups',
-        'smartsantri_santriList',
-        'smartsantri_keamananList',
-        'smartsantri_bendaharaList',
-        'smartsantri_custom_periodes',
-        'smartsantri_perizinan',
-        'smartsantri_katalog_pelanggaran',
-        'smartsantri_suratList',
-        'smartsantri_feedbackList',
-        'smartsantri_pesantren_profile'
-      ];
-      keysToClear.forEach(key => localStorage.removeItem(key));
+      // Clear all smartsantri local storage tables safely (preserving session login)
+      const sessionKeys = new Set([
+        'smartsantri_is_logged_in',
+        'smartsantri_active_role',
+        'smartsantri_active_username',
+        'smartsantri_active_display_name',
+        'smartsantri_profile_avatar',
+        'smartsantri_roles_permissions'
+      ]);
+
+      Object.keys(localStorage).forEach(key => {
+        if (key.startsWith('smartsantri_') && !sessionKeys.has(key)) {
+          localStorage.removeItem(key);
+        }
+      });
 
       setToastData({
         title: "Penghapusan Berhasil",
@@ -3758,7 +3765,7 @@ ALTER TABLE santri ADD COLUMN IF NOT EXISTS pendidikan_internal TEXT;`}
                 </button>
                 <button
                   type="button"
-                  disabled={isTruncatingAll || dangerUsernameInput !== secUsername || dangerPhraseInput.toLowerCase() !== 'saya sadar'}
+                  disabled={isTruncatingAll || dangerUsernameInput.trim().toLowerCase() !== secUsername.trim().toLowerCase() || dangerPhraseInput.trim().toLowerCase() !== 'saya sadar'}
                   onClick={executeTruncateAllData}
                   className="px-4 py-3 rounded-xl bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs transition-all cursor-pointer shadow-sm shadow-rose-600/20 active:scale-95 disabled:opacity-40 disabled:cursor-not-allowed disabled:active:scale-100 flex items-center justify-center gap-1.5"
                 >
