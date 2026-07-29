@@ -588,7 +588,7 @@ export default function HumasyView({
                                 <div className="flex items-start justify-between">
                                   <div className="min-w-0">
                                     <h4 className="text-xs font-extrabold text-slate-800 truncate">{k.nama}</h4>
-                                    <p className="text-[9.5px] text-slate-400 mt-0.5">{rooms.length} Kamar • Ketua: {k.ketua || '-'}</p>
+                                    <p className="text-[9.5px] text-slate-400 mt-0.5">{rooms.length} Kamar • Kode: {k.kode || '-'}</p>
                                   </div>
                                   <span className="text-[10px] font-mono font-extrabold bg-white border border-slate-200 px-2 py-0.5 rounded-md text-slate-700 shrink-0">
                                     {totalKompleksStudents} / {totalKompleksCapacity || '-'}
