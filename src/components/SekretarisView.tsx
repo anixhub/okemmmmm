@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -24,11 +24,16 @@ import {
   CheckCircle2,
   Eye,
   FileText,
+  FileCheck2,
   ArrowLeftRight,
   Check,
   Calendar,
-  Activity
+  Activity,
+  SlidersHorizontal,
+  ClipboardCheck,
+  FileWarning
 } from 'lucide-react';
+import { ALL_COLUMNS, DEFAULT_WAJIB_KEYS } from '../constants/monitoringColumns';
 import { Santri } from '../types';
 import { DEFAULT_ROLES } from '../lib/permissions';
 import { 
@@ -84,7 +89,29 @@ export default function SekretarisView({
     }
     return 'card';
   });
-  const [isMonitoringMode, setIsMonitoringMode] = useState(false);
+  const [isMonitoringMode, setIsMonitoringMode] = useState(true);
+  const [monitoringActiveTab, setMonitoringActiveTab] = useState<'wajib' | 'tidak_wajib'>('wajib');
+  const [showMandatoryConfigModal, setShowMandatoryConfigModal] = useState(false);
+  const [mandatoryKeys, setMandatoryKeys] = useState<(keyof Santri)[]>(() => {
+    try {
+      const saved = localStorage.getItem('smartsantri_mandatory_columns');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch (e) {
+      console.error('Failed to load mandatory columns', e);
+    }
+    return DEFAULT_WAJIB_KEYS;
+  });
+
+  const toggleMandatoryColumn = (colKey: keyof Santri) => {
+    setMandatoryKeys((prev) =>
+      prev.includes(colKey)
+        ? prev.filter((k) => k !== colKey)
+        : [...prev, colKey]
+    );
+  };
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
   const [isRealImportModalOpen, setIsRealImportModalOpen] = useState(false);
 
@@ -108,38 +135,16 @@ export default function SekretarisView({
   const [showColumnConfig, setShowColumnConfig] = useState<boolean>(false);
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
   const [showPageJumpDropdown, setShowPageJumpDropdown] = useState<boolean>(false);
-  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>({
-    nism: false,
-    noKk: false,
-    tempatLahir: false,
-    tanggalLahir: false,
-    gender: false,
-    pendidikanTerakhir: false,
-    pendidikanFormal: true,
-    anakKe: false,
-    dariBersaudara: false,
-    namaAyah: false,
-    nikAyah: false,
-    pekerjaanAyah: false,
-    pendidikanAyah: false,
-    namaIbu: false,
-    nikIbu: false,
-    pekerjaanIbu: false,
-    pendidikanIbu: false,
-    alamat: false,
-    rt: false,
-    rw: false,
-    desa: false,
-    kecamatan: false,
-    kabupaten: false,
-    provinsi: false,
-    jarakRumah: false,
-    noHp: false,
-    statusDomisili: false,
-    tanggalMasuk: false,
-    tanggalKeluar: false,
-    statusVerval: false,
-    catatan: false,
+  const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
+    const initial: Record<string, boolean> = {
+      pendidikanFormal: true,
+      kelas: true,
+      kamar: true,
+    };
+    ALL_COLUMNS.forEach((col) => {
+      initial[col.key] = DEFAULT_WAJIB_KEYS.includes(col.key);
+    });
+    return initial;
   });
 
   // Modal / Wizard States
@@ -1202,6 +1207,53 @@ export default function SekretarisView({
   const endIndex = Math.min(startIndex + pageSize, totalItems);
   const paginatedSantri = sortedSantri.slice(startIndex, endIndex);
 
+  // Detailed monitoring statistics for report cards
+  const monitoringStats = useMemo(() => {
+    if (!isMonitoringMode || filteredSantri.length === 0) {
+      return { 
+        wajibPct: 0, 
+        tidakWajibPct: 0, 
+        totalWajibFilled: 0, 
+        totalWajibCells: 0,
+        totalTidakWajibFilled: 0,
+        totalTidakWajibCells: 0
+      };
+    }
+    
+    const wajibCols = ALL_COLUMNS.filter(col => mandatoryKeys.includes(col.key));
+    const tidakWajibCols = ALL_COLUMNS.filter(col => !mandatoryKeys.includes(col.key));
+
+    const isFieldFilled = (val: any) => {
+      if (val === undefined || val === null) return false;
+      const str = String(val).trim();
+      return str !== '' && str !== '-';
+    };
+
+    let wajibFilledCount = 0;
+    const totalWajibCells = filteredSantri.length * wajibCols.length;
+    
+    let tidakWajibFilledCount = 0;
+    const totalTidakWajibCells = filteredSantri.length * tidakWajibCols.length;
+
+    filteredSantri.forEach(s => {
+      wajibCols.forEach(col => {
+        if (isFieldFilled(s[col.key])) wajibFilledCount++;
+      });
+      tidakWajibCols.forEach(col => {
+        if (isFieldFilled(s[col.key])) tidakWajibFilledCount++;
+      });
+    });
+
+    return {
+      wajibPct: totalWajibCells > 0 ? Math.round((wajibFilledCount / totalWajibCells) * 100) : 0,
+      tidakWajibPct: totalTidakWajibCells > 0 ? Math.round((tidakWajibFilledCount / totalTidakWajibCells) * 100) : 0,
+      totalWajibFilled: wajibFilledCount,
+      totalWajibCells,
+      totalTidakWajibFilled: tidakWajibFilledCount,
+      totalTidakWajibCells
+    };
+  }, [isMonitoringMode, filteredSantri, mandatoryKeys]);
+
 
 
   return (
@@ -1336,7 +1388,7 @@ export default function SekretarisView({
               </button>
 
               {/* Tambah Santri Mobile Button next to export */}
-              {subTab === 'santri' && canWriteCurrentFilter && (
+              {subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && (
                 <button
                   id="btn-add-santri-mobile"
                   onClick={() => {
@@ -1353,42 +1405,180 @@ export default function SekretarisView({
           )}
         </div>
 
-        {/* Main Controls Card (Search, View Toggle, Filter Button) */}
-        {subTab !== 'overview' && (
-          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-md sm:p-5">
-          <div className="flex flex-col gap-3 md:flex-row md:items-center">
-          
-          {/* Real-time Search Box with Filter & Sort inline on mobile */}
-          <div className="flex items-center gap-2 w-full md:flex-1">
-            <div className="relative flex-1">
-              <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
-                <Search className="h-5 w-5" />
-              </span>
-              <input
-                id="search-input"
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Cari nama, NIS, asal kota, atau kamar santri..."
-                className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3 pl-11 pr-4 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500 outline-none"
-              />
-              {searchQuery && (
-                <button 
-                  onClick={() => setSearchQuery('')}
-                  className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
-                >
-                  <X className="h-4 w-4" />
-                </button>
-              )}
+        {/* Monitoring Mode Report Summary Cards */}
+        {isMonitoringMode && subTab === 'santri' && viewMode === 'table' && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Card 1: Total Santri Terpantau */}
+            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
+                  Total Santri Terpantau
+                </span>
+                <h3 className="text-2xl font-black text-slate-800 tracking-tight">
+                  {filteredSantri.length}
+                </h3>
+                <p className="text-[11px] font-bold text-slate-500 mt-1">
+                  Biodata terfilter saat ini
+                </p>
+              </div>
+              <div className="h-12 w-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 shrink-0">
+                <ClipboardCheck className="h-6 w-6" />
+              </div>
             </div>
 
-            {/* Mobile Filter & Sort Buttons (sejajar pencarian, hanya icon) */}
-            <div className="flex md:hidden items-center gap-1.5 shrink-0">
-              {/* Filter Button (Mobile: Icon only) */}
+            {/* Card 2: Kelengkapan Data Wajib */}
+            <div className="bg-white border border-emerald-100/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+              <div className="flex-1 min-w-0 pr-4">
+                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block mb-1">
+                  Rasio Kelengkapan Wajib
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-2xl font-black text-emerald-700 tracking-tight">
+                    {monitoringStats.wajibPct}%
+                  </h3>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    ({monitoringStats.totalWajibFilled}/{monitoringStats.totalWajibCells} data)
+                  </span>
+                </div>
+                
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div 
+                    className="bg-emerald-600 h-1.5 rounded-full transition-all duration-500" 
+                    style={{ width: `${monitoringStats.wajibPct}%` }}
+                  />
+                </div>
+              </div>
+              <div className="h-12 w-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
+                <FileCheck2 className="h-6 w-6" />
+              </div>
+            </div>
+
+            {/* Card 3: Kelengkapan Data Tidak Wajib */}
+            <div className="bg-white border border-indigo-100/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
+              <div className="flex-1 min-w-0 pr-4">
+                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block mb-1">
+                  Rasio Kelengkapan Tambahan
+                </span>
+                <div className="flex items-baseline gap-2">
+                  <h3 className="text-2xl font-black text-indigo-700 tracking-tight">
+                    {monitoringStats.tidakWajibPct}%
+                  </h3>
+                  <span className="text-[10px] font-bold text-slate-400">
+                    ({monitoringStats.totalTidakWajibFilled}/{monitoringStats.totalTidakWajibCells} data)
+                  </span>
+                </div>
+
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
+                  <div 
+                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" 
+                    style={{ width: `${monitoringStats.tidakWajibPct}%` }}
+                  />
+                </div>
+              </div>
+              <div className="h-12 w-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
+                <FileWarning className="h-6 w-6" />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Main Controls Card (Search, View Toggle, Filter Button) */}
+        {subTab !== 'overview' && (
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-md sm:p-5 flex flex-col gap-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start justify-between">
+          
+          {/* Left Column: Search Box + Filter & Monitoring Tabs (in monitoring mode) */}
+          <div className="flex flex-col gap-2.5 w-full md:flex-1 min-w-[280px]">
+            {/* Tab Wajib/Tidak Wajib & Tombol Atur Data Wajib (Hanya muncul saat mode monitoring, persis sama lebarnya dengan Kotak Cari + Filter) */}
+            {isMonitoringMode && subTab === 'santri' && viewMode === 'table' && (
+              <div className="flex flex-row items-center gap-2 w-full">
+                {/* Tab Wajib & Tidak Wajib (Lebar fleksibel sama dengan Kotak Cari) */}
+                <div className="inline-flex rounded-xl bg-slate-100 p-1 gap-1 items-center h-11 flex-1 min-w-0">
+                  <button
+                    id="tab-monitoring-wajib"
+                    type="button"
+                    onClick={() => setMonitoringActiveTab('wajib')}
+                    className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-1.5 h-9 rounded-lg font-display text-xs font-bold transition-all cursor-pointer ${
+                      monitoringActiveTab === 'wajib'
+                        ? 'bg-rose-500 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <ClipboardCheck className="h-4 w-4 shrink-0" />
+                    <span className="truncate">Data Wajib</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${
+                      monitoringActiveTab === 'wajib' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {mandatoryKeys.length}
+                    </span>
+                  </button>
+
+                  <button
+                    id="tab-monitoring-tidak-wajib"
+                    type="button"
+                    onClick={() => setMonitoringActiveTab('tidak_wajib')}
+                    className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-1.5 h-9 rounded-lg font-display text-xs font-bold transition-all cursor-pointer ${
+                      monitoringActiveTab === 'tidak_wajib'
+                        ? 'bg-slate-800 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    <span className="truncate">Data Tidak Wajib</span>
+                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-mono font-bold shrink-0 ${
+                      monitoringActiveTab === 'tidak_wajib' ? 'bg-white/20 text-white' : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {ALL_COLUMNS.length - mandatoryKeys.length}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Tombol Atur Data Wajib (Lebar tetap, sejajar dengan Tombol Filter) */}
+                <button
+                  id="btn-mandatory-config-toggle"
+                  type="button"
+                  onClick={() => setShowMandatoryConfigModal(true)}
+                  className="flex flex-row h-11 items-center justify-center gap-2 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 px-3.5 font-display text-xs font-bold transition-all hover:bg-rose-100 whitespace-nowrap cursor-pointer shadow-2xs active:scale-98 shrink-0"
+                  title="Atur Data Wajib"
+                >
+                  <SlidersHorizontal className="h-4 w-4 text-rose-600 shrink-0" />
+                  <span>Atur Data Wajib</span>
+                </button>
+              </div>
+            )}
+
+            {/* Search Box + Filter Row */}
+            <div className="flex items-center gap-2 w-full">
+              {/* Search Box */}
+              <div className="relative flex-1">
+                <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
+                  <Search className="h-5 w-5" />
+                </span>
+                <input
+                  id="search-input"
+                  type="text"
+                  value={searchQuery}
+                  onChange={(e) => setSearchQuery(e.target.value)}
+                  placeholder="Cari nama, NIS, asal kota, atau kamar santri..."
+                  className="w-full rounded-xl border border-slate-200 bg-slate-50/50 py-3 pl-11 pr-4 text-sm text-slate-800 placeholder-slate-400 transition-all focus:border-emerald-500 focus:bg-white focus:ring-1 focus:ring-emerald-500 outline-none"
+                />
+                {searchQuery && (
+                  <button 
+                    onClick={() => setSearchQuery('')}
+                    className="absolute inset-y-0 right-0 flex items-center pr-3 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="h-4 w-4" />
+                  </button>
+                )}
+              </div>
+
+              {/* Filter Button (Sejajar horizontal di sebelah kanan Kotak Cari) */}
               <button
-                id="btn-filter-toggle-mobile"
+                id="btn-filter-toggle"
+                type="button"
                 onClick={() => setShowFilters(!showFilters)}
-                className={`flex h-11 w-11 items-center justify-center rounded-xl border font-display text-xs font-bold transition-all hover:bg-slate-50 shrink-0 ${
+                className={`flex h-11 items-center justify-center gap-1.5 rounded-xl border px-3.5 sm:px-4 font-display text-xs font-bold transition-all hover:bg-slate-50 shrink-0 whitespace-nowrap cursor-pointer ${
                   isSelectionMode ? 'hidden' : 'flex'
                 } ${
                   showFilters || statusFilter !== 'semua' || genderFilter !== 'semua' || domisiliFilter !== 'semua' || ageFilterConfig.enabled
@@ -1397,12 +1587,13 @@ export default function SekretarisView({
                 }`}
                 title="Filter"
               >
-                <Filter className="h-5 w-5 text-current" />
+                <Filter className="h-4 w-4 text-current" />
+                <span>Filter</span>
               </button>
 
-              {/* Sort Button (Mobile: Icon only, Card mode & Santri subtab) */}
+              {/* Mobile Sort Button (Card mode & Santri subtab) */}
               {viewMode === 'card' && subTab === 'santri' && (
-                <div className={`relative shrink-0 ${isSelectionMode ? 'hidden' : 'block'}`}>
+                <div className={`relative shrink-0 md:hidden ${isSelectionMode ? 'hidden' : 'block'}`}>
                   <button
                     id="btn-sort-card-toggle-mobile"
                     type="button"
@@ -1417,7 +1608,6 @@ export default function SekretarisView({
                     <ArrowUpDown className="h-5 w-5 text-current" />
                   </button>
 
-                  {/* Mobile Sort Options Dropdown */}
                   <AnimatePresence>
                     {showSortDropdown && (
                       <>
@@ -1480,29 +1670,10 @@ export default function SekretarisView({
                   </AnimatePresence>
                 </div>
               )}
-
-
             </div>
           </div>
 
           <div className={`${isSelectionMode ? 'flex' : 'hidden md:flex'} items-center justify-between sm:justify-end gap-1.5 sm:gap-2.5 md:gap-3 w-full md:w-auto flex-nowrap overflow-visible py-0.5`}>
-
-            {/* Filter Toggle Button */}
-            <button
-              id="btn-filter-toggle"
-              onClick={() => setShowFilters(!showFilters)}
-              className={`flex-row flex-1 sm:flex-none h-11 items-center justify-center gap-1 sm:gap-1.5 rounded-xl border px-2.5 sm:px-4 font-display text-[10px] xs:text-[11px] sm:text-xs font-bold transition-all hover:bg-slate-50 shrink-0 whitespace-nowrap ${
-                isSelectionMode ? 'hidden sm:flex' : 'flex'
-              } ${
-                showFilters || statusFilter !== 'semua' || genderFilter !== 'semua' || domisiliFilter !== 'semua' || ageFilterConfig.enabled
-                  ? 'border-emerald-200 bg-emerald-50/30 text-emerald-800'
-                  : 'border-slate-200 bg-white text-slate-600'
-              }`}
-              title="Filter"
-            >
-              <Filter className="h-4 w-4 text-current" />
-              <span className="inline">Filter</span>
-            </button>
 
             {/* Sort Button (Only for Card mode & Santri subtab) */}
             {viewMode === 'card' && subTab === 'santri' && (
@@ -1588,8 +1759,8 @@ export default function SekretarisView({
 
 
 
-            {/* Column Visibility Configuration Button (Only for Table mode & Santri subtab) */}
-            {viewMode === 'table' && subTab === 'santri' && (
+            {/* Column Configuration (Only for Table mode & Santri subtab when NOT in Monitoring Mode) */}
+            {viewMode === 'table' && subTab === 'santri' && !isMonitoringMode && (
               <div 
                 ref={columnConfigRef}
                 className={`relative flex-1 sm:flex-none shrink-0 ${isSelectionMode ? 'hidden sm:block' : 'block'}`}
@@ -1610,110 +1781,110 @@ export default function SekretarisView({
                 </button>
                 
                 {/* Column Visibility Selector Dropdown Popover */}
-                <AnimatePresence>
-                  {showColumnConfig && (
-                    <>
-                      <div 
-                        className="fixed inset-0 z-40 bg-transparent" 
-                        onClick={() => setShowColumnConfig(false)} 
-                      />
-                      <motion.div
-                        initial={{ opacity: 0, y: 10 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: 10 }}
-                        className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-56 sm:w-64 rounded-2xl border border-slate-100 bg-white p-4 shadow-xl z-50 text-slate-700"
-                      >
-                        <div className="mb-3 border-b border-slate-100 pb-2.5 flex items-center justify-between gap-2">
-                          <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
-                            <Eye className="h-3.5 w-3.5 text-emerald-600" />
-                            Visibilitas
-                          </h4>
-                          {(() => {
-                            const allChecked = Object.values(visibleColumns).every(Boolean);
-                            const isIndeterminate = Object.values(visibleColumns).some(Boolean) && !allChecked;
-                            return (
-                              <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-emerald-700 hover:text-emerald-800 select-none">
-                                <input
-                                  type="checkbox"
-                                  checked={allChecked}
-                                  ref={(el) => {
-                                    if (el) el.indeterminate = isIndeterminate;
-                                  }}
-                                  onChange={(e) => {
-                                    const val = e.target.checked;
-                                    const nextCols: Record<string, boolean> = {};
-                                    Object.keys(visibleColumns).forEach((k) => {
-                                      nextCols[k] = val;
-                                    });
-                                    setVisibleColumns(nextCols);
-                                  }}
-                                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-                                />
-                                <span>{allChecked ? 'Batal Semua' : 'Pilih Semua'}</span>
-                              </label>
-                            );
-                          })()}
-                        </div>
-                        <div className="max-h-60 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
-                          {Object.keys(visibleColumns).map((colKey) => {
-                            const labels: Record<string, string> = {
-                              nism: 'NISM',
-                              noKk: 'No. KK',
-                              tempatLahir: 'Tempat Lahir',
-                              tanggalLahir: 'Tanggal Lahir',
-                              gender: 'Gender',
-                              pendidikanTerakhir: 'Pendidikan Terakhir',
-                              anakKe: 'Anak Ke',
-                              dariBersaudara: 'Jumlah Saudara',
-                              namaAyah: 'Nama Ayah',
-                              nikAyah: 'NIK Ayah',
-                              pekerjaanAyah: 'Pekerjaan Ayah',
-                              pendidikanAyah: 'Pendidikan Ayah',
-                              namaIbu: 'Nama Ibu',
-                              nikIbu: 'NIK Ibu',
-                              pekerjaanIbu: 'Pekerjaan Ibu',
-                              pendidikanIbu: 'Pendidikan Ibu',
-                              alamat: 'Alamat',
-                              rt: 'RT',
-                              rw: 'RW',
-                              desa: 'Desa / Kelurahan',
-                              kecamatan: 'Kecamatan',
-                              kabupaten: 'Kabupaten / Kota',
-                              provinsi: 'Provinsi',
-                              jarakRumah: 'Jarak Rumah',
-                              noHp: 'Nomor HP',
-                              statusDomisili: 'Status Domisili',
-                              tanggalMasuk: 'Tanggal Masuk',
-                              tanggalKeluar: 'Tanggal Keluar',
-                              statusVerval: 'Status Verval',
-                              catatan: 'Catatan',
-                            };
-                            return (
-                              <label 
-                                key={colKey} 
-                                className="flex items-center gap-2.5 px-1 py-0.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs font-medium"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={visibleColumns[colKey]}
-                                  onChange={(e) => {
-                                    setVisibleColumns({
-                                      ...visibleColumns,
-                                      [colKey]: e.target.checked
-                                    });
-                                  }}
-                                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
-                                />
-                                {labels[colKey] || colKey}
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </motion.div>
-                    </>
-                  )}
-                </AnimatePresence>
-              </div>
+                  <AnimatePresence>
+                    {showColumnConfig && (
+                      <>
+                        <div 
+                          className="fixed inset-0 z-40 bg-transparent" 
+                          onClick={() => setShowColumnConfig(false)} 
+                        />
+                        <motion.div
+                          initial={{ opacity: 0, y: 10 }}
+                          animate={{ opacity: 1, y: 0 }}
+                          exit={{ opacity: 0, y: 10 }}
+                          className="absolute left-1/2 -translate-x-1/2 sm:left-auto sm:right-0 sm:translate-x-0 mt-2 w-56 sm:w-64 rounded-2xl border border-slate-100 bg-white p-4 shadow-xl z-50 text-slate-700"
+                        >
+                          <div className="mb-3 border-b border-slate-100 pb-2.5 flex items-center justify-between gap-2">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                              <Eye className="h-3.5 w-3.5 text-emerald-600" />
+                              Visibilitas
+                            </h4>
+                            {(() => {
+                              const allChecked = Object.values(visibleColumns).every(Boolean);
+                              const isIndeterminate = Object.values(visibleColumns).some(Boolean) && !allChecked;
+                              return (
+                                <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-emerald-700 hover:text-emerald-800 select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={allChecked}
+                                    ref={(el) => {
+                                      if (el) el.indeterminate = isIndeterminate;
+                                    }}
+                                    onChange={(e) => {
+                                      const val = e.target.checked;
+                                      const nextCols: Record<string, boolean> = {};
+                                      Object.keys(visibleColumns).forEach((k) => {
+                                        nextCols[k] = val;
+                                      });
+                                      setVisibleColumns(nextCols);
+                                    }}
+                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                  />
+                                  <span>{allChecked ? 'Batal Semua' : 'Pilih Semua'}</span>
+                                </label>
+                              );
+                            })()}
+                          </div>
+                          <div className="max-h-60 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                            {Object.keys(visibleColumns).map((colKey) => {
+                              const labels: Record<string, string> = {
+                                nism: 'NISM',
+                                noKk: 'No. KK',
+                                tempatLahir: 'Tempat Lahir',
+                                tanggalLahir: 'Tanggal Lahir',
+                                gender: 'Gender',
+                                pendidikanTerakhir: 'Pendidikan Terakhir',
+                                anakKe: 'Anak Ke',
+                                dariBersaudara: 'Jumlah Saudara',
+                                namaAyah: 'Nama Ayah',
+                                nikAyah: 'NIK Ayah',
+                                pekerjaanAyah: 'Pekerjaan Ayah',
+                                pendidikanAyah: 'Pendidikan Ayah',
+                                namaIbu: 'Nama Ibu',
+                                nikIbu: 'NIK Ibu',
+                                pekerjaanIbu: 'Pekerjaan Ibu',
+                                pendidikanIbu: 'Pendidikan Ibu',
+                                alamat: 'Alamat',
+                                rt: 'RT',
+                                rw: 'RW',
+                                desa: 'Desa / Kelurahan',
+                                kecamatan: 'Kecamatan',
+                                kabupaten: 'Kabupaten / Kota',
+                                provinsi: 'Provinsi',
+                                jarakRumah: 'Jarak Rumah',
+                                noHp: 'Nomor HP',
+                                statusDomisili: 'Status Domisili',
+                                tanggalMasuk: 'Tanggal Masuk',
+                                tanggalKeluar: 'Tanggal Keluar',
+                                statusVerval: 'Status Verval',
+                                catatan: 'Catatan',
+                              };
+                              return (
+                                <label 
+                                  key={colKey} 
+                                  className="flex items-center gap-2.5 px-1 py-0.5 rounded-lg hover:bg-slate-50 cursor-pointer text-xs font-medium"
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={visibleColumns[colKey]}
+                                    onChange={(e) => {
+                                      setVisibleColumns({
+                                        ...visibleColumns,
+                                        [colKey]: e.target.checked
+                                      });
+                                    }}
+                                    className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                  />
+                                  {labels[colKey] || colKey}
+                                </label>
+                              );
+                            })}
+                          </div>
+                        </motion.div>
+                      </>
+                    )}
+                  </AnimatePresence>
+                </div>
             )}
 
             {/* Add Record Button */}
@@ -1951,7 +2122,7 @@ export default function SekretarisView({
                 </button>
               </div>
             ) : (
-              subTab === 'santri' && canWriteCurrentFilter && (
+              subTab === 'santri' && !isMonitoringMode && canWriteCurrentFilter && (
                 <button
                   id="btn-add-santri"
                   onClick={() => {
@@ -1968,8 +2139,7 @@ export default function SekretarisView({
               )
             )}
           </div>
-
-        </div>
+          </div>
 
         {/* Expandable Advanced Filters Drawer in UI */}
         <AnimatePresence>
@@ -2353,6 +2523,8 @@ export default function SekretarisView({
               ageFilterConfig={ageFilterConfig}
               onUpdateSantri={handleUpdateSantriLocal}
               isMonitoringMode={isMonitoringMode}
+              monitoringActiveTab={monitoringActiveTab}
+              mandatoryKeys={mandatoryKeys}
             />
           ) : (
             <SantriCardView
@@ -2610,6 +2782,167 @@ export default function SekretarisView({
             >
               <X className="h-3.5 w-3.5" />
             </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Full-Screen Dark Overlay for Mandatory Column Selection */}
+      <AnimatePresence>
+        {showMandatoryConfigModal && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 z-50 flex flex-col items-center justify-between p-6 sm:p-12 bg-black text-white font-sans overflow-y-auto"
+          >
+            {/* Top Close Button */}
+            <div className="w-full flex justify-end max-w-5xl">
+              <button
+                onClick={() => {
+                  try {
+                    localStorage.setItem('smartsantri_mandatory_columns', JSON.stringify(mandatoryKeys));
+                  } catch (e) {
+                    console.error('Failed to save mandatory columns', e);
+                  }
+                  setShowMandatoryConfigModal(false);
+                }}
+                className="p-2.5 rounded-full bg-zinc-900/80 text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors cursor-pointer ring-1 ring-white/10"
+                title="Tutup & Simpan"
+              >
+                <X className="h-6 w-6" />
+              </button>
+            </div>
+
+            {/* Main Content Area - Centered & Clean */}
+            <div className="w-full max-w-[650px] mx-auto my-auto py-8 text-center flex flex-col items-center">
+              <h1 className="text-white text-3xl font-semibold mb-12 text-center tracking-tight">
+                Pilih Data Wajib
+              </h1>
+
+              <motion.div 
+                className="flex flex-wrap gap-3 justify-center overflow-visible w-full"
+                layout
+                transition={{
+                  type: "spring",
+                  stiffness: 500,
+                  damping: 30,
+                  mass: 0.5,
+                }}
+              >
+                {ALL_COLUMNS.map((col) => {
+                  const isSelected = mandatoryKeys.includes(col.key);
+                  return (
+                    <motion.button
+                      key={col.key}
+                      type="button"
+                      onClick={() => toggleMandatoryColumn(col.key)}
+                      layout
+                      initial={false}
+                      animate={{
+                        backgroundColor: isSelected ? "#2a1711" : "rgba(39, 39, 42, 0.5)",
+                      }}
+                      whileHover={{
+                        backgroundColor: isSelected ? "#2a1711" : "rgba(39, 39, 42, 0.8)",
+                      }}
+                      whileTap={{
+                        backgroundColor: isSelected ? "#1f1209" : "rgba(39, 39, 42, 0.9)",
+                      }}
+                      transition={{
+                        type: "spring",
+                        stiffness: 500,
+                        damping: 30,
+                        mass: 0.5,
+                        backgroundColor: { duration: 0.1 },
+                      }}
+                      className={`
+                        inline-flex items-center px-4 py-2 rounded-full text-base font-medium
+                        whitespace-nowrap overflow-hidden ring-1 ring-inset cursor-pointer transition-shadow
+                        ${isSelected 
+                          ? "text-[#ff9066] ring-[hsla(0,0%,100%,0.12)]" 
+                          : "text-zinc-400 ring-[hsla(0,0%,100%,0.06)]"}
+                      `}
+                    >
+                      <motion.div 
+                        className="relative flex items-center"
+                        animate={{ 
+                          width: isSelected ? "auto" : "100%",
+                          paddingRight: isSelected ? "1.5rem" : "0",
+                        }}
+                        transition={{
+                          ease: [0.175, 0.885, 0.32, 1.275],
+                          duration: 0.3,
+                        }}
+                      >
+                        <span>{col.label}</span>
+                        <AnimatePresence>
+                          {isSelected && (
+                            <motion.span
+                              initial={{ scale: 0, opacity: 0 }}
+                              animate={{ scale: 1, opacity: 1 }}
+                              exit={{ scale: 0, opacity: 0 }}
+                              transition={{ 
+                                type: "spring", 
+                                stiffness: 500, 
+                                damping: 30, 
+                                mass: 0.5 
+                              }}
+                              className="absolute right-0"
+                            >
+                              <div className="w-4 h-4 rounded-full bg-[#ff9066] flex items-center justify-center">
+                                <Check className="w-3 h-3 text-[#2a1711]" strokeWidth={2} />
+                              </div>
+                            </motion.span>
+                          )}
+                        </AnimatePresence>
+                      </motion.div>
+                    </motion.button>
+                  );
+                })}
+              </motion.div>
+
+              {/* Minimal Centered Actions */}
+              <div className="flex flex-wrap items-center justify-center gap-4 mt-12">
+                <button
+                  type="button"
+                  onClick={() => setMandatoryKeys(ALL_COLUMNS.map((c) => c.key))}
+                  className="text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer px-3 py-1.5"
+                >
+                  Pilih Semua
+                </button>
+                <span className="text-zinc-700">•</span>
+                <button
+                  type="button"
+                  onClick={() => setMandatoryKeys(DEFAULT_WAJIB_KEYS)}
+                  className="text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer px-3 py-1.5"
+                >
+                  Reset Default
+                </button>
+                <span className="text-zinc-700">•</span>
+                <button
+                  type="button"
+                  onClick={() => setMandatoryKeys([])}
+                  className="text-xs font-medium text-zinc-500 hover:text-zinc-300 transition-colors cursor-pointer px-3 py-1.5"
+                >
+                  Hapus Semua
+                </button>
+              </div>
+
+              {/* Primary Apply Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  try {
+                    localStorage.setItem('smartsantri_mandatory_columns', JSON.stringify(mandatoryKeys));
+                  } catch (e) {
+                    console.error('Failed to save mandatory columns', e);
+                  }
+                  setShowMandatoryConfigModal(false);
+                }}
+                className="mt-8 px-8 py-3 rounded-full bg-[#ff9066] hover:bg-[#ff8052] text-[#2a1711] font-bold text-sm tracking-wide transition-all shadow-lg shadow-[#ff9066]/10 cursor-pointer"
+              >
+                Selesai & Terapkan
+              </button>
+            </div>
           </motion.div>
         )}
       </AnimatePresence>

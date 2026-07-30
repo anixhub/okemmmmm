@@ -26,6 +26,7 @@ import { renderSantriAvatar, getFormalKelasDisplay } from '../../SekretarisHelpe
 import { MembershipBadge } from '../components/HelperComponents';
 import { AgeFilterConfig, calculateAgeOnDate } from '../AgeFilterModal';
 import { fetchTableData } from '../../../lib/api';
+import { DEFAULT_WAJIB_KEYS } from '../../../constants/monitoringColumns';
 
 interface SantriTableViewProps {
   paginatedSantri: Santri[];
@@ -52,6 +53,8 @@ interface SantriTableViewProps {
   ageFilterConfig?: AgeFilterConfig;
   onUpdateSantri?: (s: Santri) => void;
   isMonitoringMode?: boolean;
+  monitoringActiveTab?: 'wajib' | 'tidak_wajib';
+  mandatoryKeys?: (keyof Santri)[];
 }
 
 const isSantriDataComplete = (s: Santri): boolean => {
@@ -78,16 +81,11 @@ const isSantriDataComplete = (s: Santri): boolean => {
   return true;
 };
 
-const isMonitoringWajibComplete = (s: Santri): boolean => {
-  const wajibFields: (keyof Santri)[] = [
-    'nis', 'gender', 'nik', 'nisn', 'tempatLahir', 'tanggalLahir',
-    'desa', 'kecamatan', 'kabupaten', 'provinsi', 'pendidikanTerakhir',
-    'namaAyah', 'namaIbu', 'statusKeanggotaan', 'noHp', 'tanggalMasuk', 'statusEmis'
-  ];
-  
-  for (const field of wajibFields) {
+const isMonitoringWajibComplete = (s: Santri, keys: (keyof Santri)[] = []): boolean => {
+  const activeKeys = keys && keys.length > 0 ? keys : DEFAULT_WAJIB_KEYS;
+  for (const field of activeKeys) {
     const val = s[field];
-    if (val === undefined || val === null || String(val).trim() === '') {
+    if (val === undefined || val === null || String(val).trim() === '' || String(val).trim() === '-') {
       return false;
     }
   }
@@ -201,16 +199,48 @@ export default function SantriTableView({
   canWritePutri,
   ageFilterConfig,
   onUpdateSantri,
-  isMonitoringMode = false
+  isMonitoringMode = false,
+  monitoringActiveTab = 'wajib',
+  mandatoryKeys = []
 }: SantriTableViewProps) {
+  const shouldShowColumn = (colKey: string): boolean => {
+    if (colKey === 'nama') return true;
+    if (isMonitoringMode) {
+      const isWajib = mandatoryKeys.includes(colKey as keyof Santri);
+      return monitoringActiveTab === 'wajib' ? isWajib : !isWajib;
+    }
+    return visibleColumns[colKey] ?? false;
+  };
+
   const isColumnComplete = (key: string): boolean => {
     if (!paginatedSantri || paginatedSantri.length === 0) return true;
     return paginatedSantri.every(s => !isCellEmpty(s, key));
   };
 
+  const getColumnStats = (key: string) => {
+    if (!paginatedSantri || paginatedSantri.length === 0) {
+      return { filled: 0, empty: 0, total: 0, pct: 100 };
+    }
+    const total = paginatedSantri.length;
+    let filled = 0;
+    paginatedSantri.forEach(s => {
+      if (!isCellEmpty(s, key)) filled++;
+    });
+    const empty = total - filled;
+    const pct = Math.round((filled / total) * 100);
+    return { filled, empty, total, pct };
+  };
+
+  const [hoveredHeaderTooltip, setHoveredHeaderTooltip] = React.useState<{
+    key: string;
+    label: string;
+    rect: { top: number; bottom: number; left: number; width: number; height: number };
+    colStats: { total: number; filled: number; empty: number; pct: number };
+  } | null>(null);
+
   const isNoColumnComplete = (): boolean => {
     if (!paginatedSantri || paginatedSantri.length === 0) return true;
-    return paginatedSantri.every(s => isMonitoringWajibComplete(s));
+    return paginatedSantri.every(s => isMonitoringWajibComplete(s, mandatoryKeys));
   };
   const [activeEmisDropdownId, setActiveEmisDropdownId] = React.useState<string | null>(null);
   const [activeVervalDropdownId, setActiveVervalDropdownId] = React.useState<string | null>(null);
@@ -958,6 +988,7 @@ export default function SantriTableView({
       ? (isSelectionMode ? 'sm:left-[112px] left-[112px]' : 'sm:left-[64px] left-[64px]')
       : '';
     const complete = isColumnComplete(key);
+    const colStats = getColumnStats(key);
 
     return (
       <th 
@@ -969,7 +1000,25 @@ export default function SantriTableView({
             setSortDirection('asc');
           }
         }}
-        className={`px-4 py-3 cursor-pointer transition-all select-none font-display text-xs font-bold uppercase tracking-wider sticky top-0 relative ${scrolledHeaderClass} ${
+        onMouseEnter={(e) => {
+          if (isMonitoringMode ?? true) {
+            const rect = e.currentTarget.getBoundingClientRect();
+            setHoveredHeaderTooltip({
+              key,
+              label,
+              rect: {
+                top: rect.top,
+                bottom: rect.bottom,
+                left: rect.left,
+                width: rect.width,
+                height: rect.height,
+              },
+              colStats,
+            });
+          }
+        }}
+        onMouseLeave={() => setHoveredHeaderTooltip(null)}
+        className={`px-4 py-3 cursor-pointer transition-all select-none font-display text-xs font-bold uppercase tracking-wider sticky top-0 relative group/header ${scrolledHeaderClass} ${
           isSticky 
             ? `${stickyLeftClass} z-30 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] md:w-[272px] w-[200px] md:min-w-[272px] min-w-[200px] md:max-w-[272px] max-w-[200px] border-r` 
             : `hover:bg-slate-100/80 z-20 ${widthClass || 'w-44 min-w-[176px]'}`
@@ -1065,51 +1114,51 @@ export default function SantriTableView({
           />
         )}
       </th>
-      {/* Selalu Terlihat: Nama (berisi foto juga), NIS, NISN, NIK */}
+      {/* Selalu Terlihat: Nama */}
       {renderSortHeader('nama', 'Nama Lengkap', true)}
-      {renderSortHeader('nis', 'NIS', false, 'w-[95px] min-w-[95px]')}
-      {renderSortHeader('nisn', 'NISN', false, 'w-[110px] min-w-[110px]')}
-      {renderSortHeader('nik', 'NIK', false, 'w-[155px] min-w-[155px]')}
+      {shouldShowColumn('nis') && renderSortHeader('nis', 'NIS', false, 'w-[95px] min-w-[95px]')}
+      {shouldShowColumn('nisn') && renderSortHeader('nisn', 'NISN', false, 'w-[110px] min-w-[110px]')}
+      {shouldShowColumn('nik') && renderSortHeader('nik', 'NIK', false, 'w-[155px] min-w-[155px]')}
       
       {/* Kolom Umur jika Filter Umur Aktif */}
       {ageFilterConfig?.enabled && renderSortHeader('umur', 'Umur', false, 'w-[125px] min-w-[125px]', getAgeHeaderSubtext(ageFilterConfig))}
 
-      {/* Toggable */}
-      {visibleColumns.nism && renderSortHeader('nism', 'NISM', false, 'w-[110px] min-w-[110px]')}
-      {visibleColumns.noKk && renderSortHeader('noKk', 'No. KK', false, 'w-[155px] min-w-[155px]')}
-      {visibleColumns.tempatLahir && renderSortHeader('tempatLahir', 'Tempat Lahir', false, 'w-[125px] min-w-[125px]')}
-      {visibleColumns.tanggalLahir && renderSortHeader('tanggalLahir', 'Tanggal Lahir', false, 'w-[115px] min-w-[115px]')}
-      {visibleColumns.gender && renderSortHeader('gender', 'Gender', false, 'w-[90px] min-w-[90px]')}
-      {visibleColumns.pendidikanTerakhir && renderSortHeader('pendidikanTerakhir', 'Pendidikan Terakhir', false, 'w-[160px] min-w-[160px]')}
-      {(visibleColumns.pendidikanFormal ?? true) && renderSortHeader('pendidikanFormal', 'Pendidikan Formal', false, 'w-[190px] min-w-[190px]')}
-      {visibleColumns.anakKe && renderSortHeader('anakKe', 'Anak Ke', false, 'w-[85px] min-w-[85px]')}
-      {visibleColumns.dariBersaudara && renderSortHeader('dariBersaudara', 'Jumlah Saudara', false, 'w-[120px] min-w-[120px]')}
-      {visibleColumns.namaAyah && renderSortHeader('namaAyah', 'Nama Ayah', false, 'w-[150px] min-w-[150px]')}
-      {visibleColumns.nikAyah && renderSortHeader('nikAyah', 'NIK Ayah', false, 'w-[155px] min-w-[155px]')}
-      {visibleColumns.pekerjaanAyah && renderSortHeader('pekerjaanAyah', 'Pekerjaan Ayah', false, 'w-[140px] min-w-[140px]')}
-      {visibleColumns.pendidikanAyah && renderSortHeader('pendidikanAyah', 'Pendidikan Ayah', false, 'w-[130px] min-w-[130px]')}
-      {visibleColumns.namaIbu && renderSortHeader('namaIbu', 'Nama Ibu', false, 'w-[150px] min-w-[150px]')}
-      {visibleColumns.nikIbu && renderSortHeader('nikIbu', 'NIK Ibu', false, 'w-[155px] min-w-[155px]')}
-      {visibleColumns.pekerjaanIbu && renderSortHeader('pekerjaanIbu', 'Pekerjaan Ibu', false, 'w-[140px] min-w-[140px]')}
-      {visibleColumns.pendidikanIbu && renderSortHeader('pendidikanIbu', 'Pendidikan Ibu', false, 'w-[130px] min-w-[130px]')}
-      {visibleColumns.alamat && renderSortHeader('alamat', 'Alamat', false, 'w-[180px] min-w-[180px]')}
-      {visibleColumns.rt && renderSortHeader('rt', 'RT', false, 'w-[65px] min-w-[65px]')}
-      {visibleColumns.rw && renderSortHeader('rw', 'RW', false, 'w-[65px] min-w-[65px]')}
-      {visibleColumns.desa && renderSortHeader('desa', 'Desa / Kelurahan', false, 'w-[140px] min-w-[140px]')}
-      {visibleColumns.kecamatan && renderSortHeader('kecamatan', 'Kecamatan', false, 'w-[140px] min-w-[140px]')}
-      {visibleColumns.kabupaten && renderSortHeader('kabupaten', 'Kabupaten / Kota', false, 'w-[150px] min-w-[150px]')}
-      {visibleColumns.provinsi && renderSortHeader('provinsi', 'Provinsi', false, 'w-[150px] min-w-[150px]')}
-      {visibleColumns.jarakRumah && renderSortHeader('jarakRumah', 'Jarak (km)', false, 'w-[100px] min-w-[100px]')}
-      {visibleColumns.noHp && renderSortHeader('noHp', 'No. HP Wali', false, 'w-[130px] min-w-[130px]')}
-      {visibleColumns.statusDomisili && renderSortHeader('statusDomisili', 'Status Domisili', false, 'w-[130px] min-w-[130px]')}
-      {visibleColumns.tanggalMasuk && renderSortHeader('tanggalMasuk', 'Tgl Masuk', false, 'w-[105px] min-w-[105px]')}
-      {visibleColumns.tanggalKeluar && renderSortHeader('tanggalKeluar', 'Tgl Keluar', false, 'w-[105px] min-w-[105px]')}
+      {/* Toggable & Monitoring columns */}
+      {shouldShowColumn('nism') && renderSortHeader('nism', 'NISM', false, 'w-[110px] min-w-[110px]')}
+      {shouldShowColumn('noKk') && renderSortHeader('noKk', 'No. KK', false, 'w-[155px] min-w-[155px]')}
+      {shouldShowColumn('tempatLahir') && renderSortHeader('tempatLahir', 'Tempat Lahir', false, 'w-[125px] min-w-[125px]')}
+      {shouldShowColumn('tanggalLahir') && renderSortHeader('tanggalLahir', 'Tanggal Lahir', false, 'w-[115px] min-w-[115px]')}
+      {shouldShowColumn('gender') && renderSortHeader('gender', 'Gender', false, 'w-[90px] min-w-[90px]')}
+      {shouldShowColumn('pendidikanTerakhir') && renderSortHeader('pendidikanTerakhir', 'Pendidikan Terakhir', false, 'w-[160px] min-w-[160px]')}
+      {shouldShowColumn('pendidikanFormal') && renderSortHeader('pendidikanFormal', 'Pendidikan Formal', false, 'w-[190px] min-w-[190px]')}
+      {shouldShowColumn('anakKe') && renderSortHeader('anakKe', 'Anak Ke', false, 'w-[85px] min-w-[85px]')}
+      {shouldShowColumn('dariBersaudara') && renderSortHeader('dariBersaudara', 'Jumlah Saudara', false, 'w-[120px] min-w-[120px]')}
+      {shouldShowColumn('namaAyah') && renderSortHeader('namaAyah', 'Nama Ayah', false, 'w-[150px] min-w-[150px]')}
+      {shouldShowColumn('nikAyah') && renderSortHeader('nikAyah', 'NIK Ayah', false, 'w-[155px] min-w-[155px]')}
+      {shouldShowColumn('pekerjaanAyah') && renderSortHeader('pekerjaanAyah', 'Pekerjaan Ayah', false, 'w-[140px] min-w-[140px]')}
+      {shouldShowColumn('pendidikanAyah') && renderSortHeader('pendidikanAyah', 'Pendidikan Ayah', false, 'w-[130px] min-w-[130px]')}
+      {shouldShowColumn('namaIbu') && renderSortHeader('namaIbu', 'Nama Ibu', false, 'w-[150px] min-w-[150px]')}
+      {shouldShowColumn('nikIbu') && renderSortHeader('nikIbu', 'NIK Ibu', false, 'w-[155px] min-w-[155px]')}
+      {shouldShowColumn('pekerjaanIbu') && renderSortHeader('pekerjaanIbu', 'Pekerjaan Ibu', false, 'w-[140px] min-w-[140px]')}
+      {shouldShowColumn('pendidikanIbu') && renderSortHeader('pendidikanIbu', 'Pendidikan Ibu', false, 'w-[130px] min-w-[130px]')}
+      {shouldShowColumn('alamat') && renderSortHeader('alamat', 'Alamat', false, 'w-[180px] min-w-[180px]')}
+      {shouldShowColumn('rt') && renderSortHeader('rt', 'RT', false, 'w-[65px] min-w-[65px]')}
+      {shouldShowColumn('rw') && renderSortHeader('rw', 'RW', false, 'w-[65px] min-w-[65px]')}
+      {shouldShowColumn('desa') && renderSortHeader('desa', 'Desa / Kelurahan', false, 'w-[140px] min-w-[140px]')}
+      {shouldShowColumn('kecamatan') && renderSortHeader('kecamatan', 'Kecamatan', false, 'w-[140px] min-w-[140px]')}
+      {shouldShowColumn('kabupaten') && renderSortHeader('kabupaten', 'Kabupaten / Kota', false, 'w-[150px] min-w-[150px]')}
+      {shouldShowColumn('provinsi') && renderSortHeader('provinsi', 'Provinsi', false, 'w-[150px] min-w-[150px]')}
+      {shouldShowColumn('jarakRumah') && renderSortHeader('jarakRumah', 'Jarak (km)', false, 'w-[100px] min-w-[100px]')}
+      {shouldShowColumn('noHp') && renderSortHeader('noHp', 'No. HP Wali', false, 'w-[130px] min-w-[130px]')}
+      {shouldShowColumn('statusDomisili') && renderSortHeader('statusDomisili', 'Status Domisili', false, 'w-[130px] min-w-[130px]')}
+      {shouldShowColumn('tanggalMasuk') && renderSortHeader('tanggalMasuk', 'Tgl Masuk', false, 'w-[105px] min-w-[105px]')}
+      {shouldShowColumn('tanggalKeluar') && renderSortHeader('tanggalKeluar', 'Tgl Keluar', false, 'w-[105px] min-w-[105px]')}
       
       {/* Status & Emis & Verval */}
-      {renderSortHeader('statusKeanggotaan', 'Status', false, 'w-[105px] min-w-[105px]')}
-      {renderSortHeader('statusEmis', 'Emis', false, 'w-[95px] min-w-[95px]')}
-      {visibleColumns.statusVerval && renderSortHeader('statusVerval', 'Verval', false, 'w-[95px] min-w-[95px]')}
-      {visibleColumns.catatan && renderSortHeader('catatan', 'Catatan', false, 'w-[180px] min-w-[180px]')}
+      {shouldShowColumn('statusKeanggotaan') && renderSortHeader('statusKeanggotaan', 'Status', false, 'w-[105px] min-w-[105px]')}
+      {shouldShowColumn('statusEmis') && renderSortHeader('statusEmis', 'Emis', false, 'w-[95px] min-w-[95px]')}
+      {shouldShowColumn('statusVerval') && renderSortHeader('statusVerval', 'Verval', false, 'w-[95px] min-w-[95px]')}
+      {shouldShowColumn('catatan') && renderSortHeader('catatan', 'Catatan', false, 'w-[180px] min-w-[180px]')}
       
       <th className={`px-2 py-4 text-center font-display text-xs font-bold uppercase tracking-wider sticky top-0 right-0 z-35 shadow-[-2px_0_5px_rgba(0,0,0,0.05)] border-l w-12 min-w-[48px] transition-all duration-300 ${isSelectionMode ? 'hidden md:table-cell' : 'table-cell'} ${headerClass}`}>Aksi</th>
     </tr>
@@ -1210,7 +1259,7 @@ export default function SantriTableView({
                 }`}>
                   <div className="flex items-center justify-center gap-2">
                     {isMonitoringMode && (
-                      isMonitoringWajibComplete(s) ? (
+                      isMonitoringWajibComplete(s, mandatoryKeys) ? (
                         <div 
                           className="inline-flex h-4.5 w-4.5 items-center justify-center rounded-full bg-emerald-50 text-emerald-600 border border-emerald-200 shrink-0 shadow-xs"
                           title="Semua Data Wajib Monitoring Lengkap"
@@ -1246,23 +1295,29 @@ export default function SantriTableView({
                 </td>
                 
                 {/* NIS */}
-                <td className={`px-3 py-4 whitespace-nowrap text-xs font-semibold text-slate-700 w-[110px] min-w-[110px] ${
-                  isMonitoringMode && isCellEmpty(s, 'nis') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                }`}>
-                  {renderEditableCell(s, 'nis', s.nis, { className: 'font-mono' })}
-                </td>
+                {shouldShowColumn('nis') && (
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs font-semibold text-slate-700 w-[110px] min-w-[110px] ${
+                    isMonitoringMode && isCellEmpty(s, 'nis') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'nis', s.nis, { className: 'font-mono' })}
+                  </td>
+                )}
 
-                {/* Selalu Terlihat: NISN & NIK */}
-                <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
-                  isMonitoringMode && isCellEmpty(s, 'nisn') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                }`}>
-                  {renderEditableCell(s, 'nisn', s.nisn || '-', { className: 'font-mono' })}
-                </td>
-                <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[160px] min-w-[160px] ${
-                  isMonitoringMode && isCellEmpty(s, 'nik') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                }`}>
-                  {renderEditableCell(s, 'nik', s.nik || '-', { className: 'font-mono' })}
-                </td>
+                {/* NISN & NIK */}
+                {shouldShowColumn('nisn') && (
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
+                    isMonitoringMode && isCellEmpty(s, 'nisn') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'nisn', s.nisn || '-', { className: 'font-mono' })}
+                  </td>
+                )}
+                {shouldShowColumn('nik') && (
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[160px] min-w-[160px] ${
+                    isMonitoringMode && isCellEmpty(s, 'nik') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
+                    {renderEditableCell(s, 'nik', s.nik || '-', { className: 'font-mono' })}
+                  </td>
+                )}
 
                 {/* Kolom Umur jika Filter Umur Aktif */}
                 {ageFilterConfig?.enabled && (
@@ -1279,29 +1334,29 @@ export default function SantriTableView({
                   </td>
                 )}
 
-                {/* Toggable */}
-                {visibleColumns.nism && (
+                {/* Toggable / Monitoring */}
+                {shouldShowColumn('nism') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[120px] min-w-[120px] ${
                     isMonitoringMode && isCellEmpty(s, 'nism') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'nism', s.nism || '-', { className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.noKk && (
+                {shouldShowColumn('noKk') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[160px] min-w-[160px] ${
                     isMonitoringMode && isCellEmpty(s, 'noKk') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'noKk', s.noKk || '-', { className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.tempatLahir && (
+                {shouldShowColumn('tempatLahir') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs font-medium text-slate-700 font-display w-[130px] min-w-[130px] ${
                     isMonitoringMode && isCellEmpty(s, 'tempatLahir') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'tempatLahir', s.tempatLahir || '-')}
                   </td>
                 )}
-                {visibleColumns.tanggalLahir && (
+                {shouldShowColumn('tanggalLahir') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[125px] min-w-[125px] ${
                     isMonitoringMode && isCellEmpty(s, 'tanggalLahir') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1309,8 +1364,8 @@ export default function SantriTableView({
                   </td>
                 )}
 
-                {/* Toggable */}
-                {visibleColumns.gender && (
+                {/* Toggable / Monitoring */}
+                {shouldShowColumn('gender') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs w-[110px] min-w-[110px] ${
                     isMonitoringMode && isCellEmpty(s, 'gender') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1328,7 +1383,7 @@ export default function SantriTableView({
                     )}
                   </td>
                 )}
-                {visibleColumns.pendidikanTerakhir && (
+                {shouldShowColumn('pendidikanTerakhir') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 w-[160px] min-w-[160px] ${
                     isMonitoringMode && isCellEmpty(s, 'pendidikanTerakhir') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1338,7 +1393,7 @@ export default function SantriTableView({
                     })}
                   </td>
                 )}
-                {(visibleColumns.pendidikanFormal ?? true) && (
+                {shouldShowColumn('pendidikanFormal') && (
                   <td className="px-3 py-4 whitespace-nowrap text-xs w-[190px] min-w-[190px]">
                     {(() => {
                       const canWrite = s.gender === 'Putri' ? canWritePutri : canWritePutra;
@@ -1459,42 +1514,42 @@ export default function SantriTableView({
                     })()}
                   </td>
                 )}
-                {visibleColumns.anakKe && (
+                {shouldShowColumn('anakKe') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 w-[90px] min-w-[90px] ${
                     isMonitoringMode && isCellEmpty(s, 'anakKe') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'anakKe', s.anakKe !== undefined ? s.anakKe : '-', { type: 'number', className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.dariBersaudara && (
+                {shouldShowColumn('dariBersaudara') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 w-[125px] min-w-[125px] ${
                     isMonitoringMode && isCellEmpty(s, 'dariBersaudara') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'dariBersaudara', s.dariBersaudara !== undefined ? s.dariBersaudara : '-', { type: 'number', className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.namaAyah && (
+                {shouldShowColumn('namaAyah') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 max-w-[150px] truncate w-[150px] min-w-[150px] ${
                     isMonitoringMode && isCellEmpty(s, 'namaAyah') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'namaAyah', s.namaAyah || '-')}
                   </td>
                 )}
-                {visibleColumns.nikAyah && (
+                {shouldShowColumn('nikAyah') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[160px] min-w-[160px] ${
                     isMonitoringMode && isCellEmpty(s, 'nikAyah') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'nikAyah', s.nikAyah || '-', { className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.pekerjaanAyah && (
+                {shouldShowColumn('pekerjaanAyah') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 max-w-[140px] truncate w-[140px] min-w-[140px] ${
                     isMonitoringMode && isCellEmpty(s, 'pekerjaanAyah') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'pekerjaanAyah', s.pekerjaanAyah || '-')}
                   </td>
                 )}
-                {visibleColumns.pendidikanAyah && (
+                {shouldShowColumn('pendidikanAyah') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 w-[140px] min-w-[140px] ${
                     isMonitoringMode && isCellEmpty(s, 'pendidikanAyah') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1504,28 +1559,28 @@ export default function SantriTableView({
                     })}
                   </td>
                 )}
-                {visibleColumns.namaIbu && (
+                {shouldShowColumn('namaIbu') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 max-w-[150px] truncate w-[150px] min-w-[150px] ${
                     isMonitoringMode && isCellEmpty(s, 'namaIbu') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'namaIbu', s.namaIbu || '-')}
                   </td>
                 )}
-                {visibleColumns.nikIbu && (
+                {shouldShowColumn('nikIbu') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[160px] min-w-[160px] ${
                     isMonitoringMode && isCellEmpty(s, 'nikIbu') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'nikIbu', s.nikIbu || '-', { className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.pekerjaanIbu && (
+                {shouldShowColumn('pekerjaanIbu') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 max-w-[140px] truncate w-[140px] min-w-[140px] ${
                     isMonitoringMode && isCellEmpty(s, 'pekerjaanIbu') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'pekerjaanIbu', s.pekerjaanIbu || '-')}
                   </td>
                 )}
-                {visibleColumns.pendidikanIbu && (
+                {shouldShowColumn('pendidikanIbu') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-700 w-[140px] min-w-[140px] ${
                     isMonitoringMode && isCellEmpty(s, 'pendidikanIbu') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1535,21 +1590,21 @@ export default function SantriTableView({
                     })}
                   </td>
                 )}
-                {visibleColumns.alamat && (
+                {shouldShowColumn('alamat') && (
                   <td className={`px-3 py-4 text-xs text-slate-600 max-w-[180px] truncate w-[180px] min-w-[180px] ${
                     isMonitoringMode && isCellEmpty(s, 'alamat') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'alamat', s.alamat || '-')}
                   </td>
                 )}
-                {visibleColumns.rt && (
+                {shouldShowColumn('rt') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[75px] min-w-[75px] ${
                     isMonitoringMode && isCellEmpty(s, 'rt') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'rt', s.rt && String(s.rt).trim() !== '0' ? s.rt : '-', { className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.rw && (
+                {shouldShowColumn('rw') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[75px] min-w-[75px] ${
                     isMonitoringMode && isCellEmpty(s, 'rw') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1557,50 +1612,50 @@ export default function SantriTableView({
                   </td>
                 )}
 
-                {/* Toggable */}
-                {visibleColumns.desa && (
+                {/* Toggable / Monitoring */}
+                {shouldShowColumn('desa') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-600 w-[140px] min-w-[140px] ${
                     isMonitoringMode && isCellEmpty(s, 'desa') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'desa', s.desa || '-')}
                   </td>
                 )}
-                {visibleColumns.kecamatan && (
+                {shouldShowColumn('kecamatan') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-600 w-[140px] min-w-[140px] ${
                     isMonitoringMode && isCellEmpty(s, 'kecamatan') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'kecamatan', s.kecamatan || '-')}
                   </td>
                 )}
-                {visibleColumns.kabupaten && (
+                {shouldShowColumn('kabupaten') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-600 w-[150px] min-w-[150px] ${
                     isMonitoringMode && isCellEmpty(s, 'kabupaten') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'kabupaten', s.kabupaten || s.asal || '-')}
                   </td>
                 )}
-                {visibleColumns.provinsi && (
+                {shouldShowColumn('provinsi') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-600 w-[150px] min-w-[150px] ${
                     isMonitoringMode && isCellEmpty(s, 'provinsi') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'provinsi', s.provinsi || '-')}
                   </td>
                 )}
-                {visibleColumns.jarakRumah && (
+                {shouldShowColumn('jarakRumah') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-600 w-[110px] min-w-[110px] ${
                     isMonitoringMode && isCellEmpty(s, 'jarakRumah') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'jarakRumah', s.jarakRumah && s.jarakRumah !== 0 ? `${s.jarakRumah} km` : '-', { type: 'number', className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.noHp && (
+                {shouldShowColumn('noHp') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-600 w-[135px] min-w-[135px] ${
                     isMonitoringMode && isCellEmpty(s, 'noHp') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'noHp', s.noHp || '-', { className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.statusDomisili && (
+                {shouldShowColumn('statusDomisili') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs w-[130px] min-w-[130px] ${
                     isMonitoringMode && isCellEmpty(s, 'statusDomisili') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1734,14 +1789,14 @@ export default function SantriTableView({
                     )}
                   </td>
                 )}
-                {visibleColumns.tanggalMasuk && (
+                {shouldShowColumn('tanggalMasuk') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[115px] min-w-[115px] ${
                     isMonitoringMode && isCellEmpty(s, 'tanggalMasuk') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
                     {renderEditableCell(s, 'tanggalMasuk', formatDateDDMMYYYY(s.tanggalMasuk), { type: 'date', className: 'font-mono' })}
                   </td>
                 )}
-                {visibleColumns.tanggalKeluar && (
+                {shouldShowColumn('tanggalKeluar') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs text-slate-500 w-[115px] min-w-[115px] ${
                     isMonitoringMode && isCellEmpty(s, 'tanggalKeluar') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -1749,10 +1804,11 @@ export default function SantriTableView({
                   </td>
                 )}
 
-                {/* Selalu Terlihat: Status Keanggotaan & Status Emis */}
-                <td className={`px-3 py-4 text-center whitespace-nowrap text-xs w-[115px] min-w-[115px] ${
-                  isMonitoringMode && isCellEmpty(s, 'statusKeanggotaan') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                }`}>
+                {/* Status Keanggotaan & Status Emis */}
+                {shouldShowColumn('statusKeanggotaan') && (
+                  <td className={`px-3 py-4 text-center whitespace-nowrap text-xs w-[115px] min-w-[115px] ${
+                    isMonitoringMode && isCellEmpty(s, 'statusKeanggotaan') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
                   {(() => {
                     const canWrite = s.gender === 'Putri' ? canWritePutri : canWritePutra;
                     const currentStatus = s.statusKeanggotaan || 'Aktif';
@@ -1887,9 +1943,11 @@ export default function SantriTableView({
                     );
                   })()}
                 </td>
-                <td className={`px-3 py-4 whitespace-nowrap text-xs w-[115px] min-w-[115px] ${
-                  isMonitoringMode && isCellEmpty(s, 'statusEmis') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
-                }`}>
+                )}
+                {shouldShowColumn('statusEmis') && (
+                  <td className={`px-3 py-4 whitespace-nowrap text-xs w-[115px] min-w-[115px] ${
+                    isMonitoringMode && isCellEmpty(s, 'statusEmis') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
+                  }`}>
                   {(() => {
                     const canWrite = s.gender === 'Putri' ? canWritePutri : canWritePutra;
                     const isTerdaftar = (s.statusEmis || 'Belum').toLowerCase() === 'terdaftar';
@@ -2022,9 +2080,10 @@ export default function SantriTableView({
                     );
                   })()}
                 </td>
+                )}
 
                 {/* Status Verval */}
-                {visibleColumns.statusVerval && (
+                {shouldShowColumn('statusVerval') && (
                   <td className={`px-3 py-4 whitespace-nowrap text-xs w-[115px] min-w-[115px] ${
                     isMonitoringMode && isCellEmpty(s, 'statusVerval') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -2086,7 +2145,7 @@ export default function SantriTableView({
                   </td>
                 )}
 
-                {visibleColumns.catatan && (
+                {shouldShowColumn('catatan') && (
                   <td className={`px-3 py-4 text-xs text-slate-500 max-w-[180px] truncate w-[180px] min-w-[180px] ${
                     isMonitoringMode && isCellEmpty(s, 'catatan') ? '!bg-rose-100/90 !text-rose-800 font-medium' : ''
                   }`}>
@@ -2903,6 +2962,62 @@ export default function SantriTableView({
           </div>
           {/* Scroll Navigation Buttons inside Floating Header */}
           {renderScrollButtons(true)}
+        </div>,
+        document.body
+      )}
+
+      {/* Unclipped Floating Tooltip Box for Table Header Stats (Portal z-[9999]) */}
+      {hoveredHeaderTooltip && typeof document !== 'undefined' && createPortal(
+        <div 
+          className="fixed z-[9999] pointer-events-none w-56 p-3 bg-slate-900/95 backdrop-blur-md text-white rounded-xl shadow-2xl border border-slate-700/60 normal-case tracking-normal text-left transition-all"
+          style={{
+            top: `${hoveredHeaderTooltip.rect.bottom + 8}px`,
+            left: `${Math.max(120, Math.min(window.innerWidth - 120, hoveredHeaderTooltip.rect.left + hoveredHeaderTooltip.rect.width / 2))}px`,
+            transform: 'translateX(-50%)'
+          }}
+        >
+          {/* Arrow pointing up */}
+          <div 
+            className="absolute -top-1.5 w-3 h-3 rotate-45 bg-slate-900 border-l border-t border-slate-700/60"
+            style={{
+              left: `${Math.max(16, Math.min(200, 112 + ((hoveredHeaderTooltip.rect.left + hoveredHeaderTooltip.rect.width / 2) - Math.max(120, Math.min(window.innerWidth - 120, hoveredHeaderTooltip.rect.left + hoveredHeaderTooltip.rect.width / 2)))))}px`
+            }}
+          />
+
+          <div className="relative z-10">
+            <div className="flex items-center justify-between pb-1.5 mb-1.5 border-b border-slate-800">
+              <span className="font-extrabold text-[11px] text-slate-200 truncate pr-1">{hoveredHeaderTooltip.label}</span>
+              <span className={`text-[9.5px] font-black px-1.5 py-0.5 rounded shrink-0 ${
+                hoveredHeaderTooltip.colStats.pct === 100 
+                  ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' 
+                  : hoveredHeaderTooltip.colStats.pct >= 50 
+                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40' 
+                  : 'bg-rose-500/20 text-rose-300 border border-rose-500/40'
+              }`}>
+                {hoveredHeaderTooltip.colStats.pct}%
+              </span>
+            </div>
+            
+            <div className="space-y-1 text-[10.5px]">
+              <div className="flex justify-between items-center text-emerald-400 font-semibold">
+                <span>Terisi:</span>
+                <span className="font-bold font-mono">{hoveredHeaderTooltip.colStats.filled} santri</span>
+              </div>
+              <div className="flex justify-between items-center text-rose-400 font-semibold">
+                <span>Belum Terisi:</span>
+                <span className="font-bold font-mono">{hoveredHeaderTooltip.colStats.empty} santri</span>
+              </div>
+            </div>
+
+            <div className="w-full bg-slate-800 rounded-full h-1.5 mt-2 overflow-hidden border border-slate-700/50">
+              <div 
+                className={`h-full rounded-full transition-all duration-300 ${
+                  hoveredHeaderTooltip.colStats.pct === 100 ? 'bg-emerald-400' : hoveredHeaderTooltip.colStats.pct >= 50 ? 'bg-amber-400' : 'bg-rose-400'
+                }`}
+                style={{ width: `${hoveredHeaderTooltip.colStats.pct}%` }}
+              />
+            </div>
+          </div>
         </div>,
         document.body
       )}
