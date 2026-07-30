@@ -1210,24 +1210,47 @@ export default function LembagaKelasSub({
       );
     } else if (activeTab === 'Internal') {
       // Internal Pondok: Only active santri (whether EMIS terdaftar or not)
+      const isCalonClass = isDefaultClass(selectedKelas);
       const currentClassStudentIds = selectedKelas ? getStudentsInClass(selectedKelas, selectedLembaga).map(s => s.id) : [];
-      return santriList.filter(s => {
-        if (!isGenderMatch(s.gender, selectedGender)) return false;
-        if (!isAktif(s)) return false;
-        if (currentClassStudentIds.includes(s.id)) return false;
-        return true;
-      });
+
+      if (isCalonClass) {
+        return santriList.filter(s => {
+          if (!isGenderMatch(s.gender, selectedGender)) return false;
+          if (!isAktif(s)) return false;
+          if (currentClassStudentIds.includes(s.id)) return false;
+          return true;
+        });
+      } else {
+        return santriList.filter(s => {
+          if (!isGenderMatch(s.gender, selectedGender)) return false;
+          if (!isAktif(s)) return false;
+          if (!isStudentInLembaga(s, selectedLembaga)) return false;
+          if (currentClassStudentIds.includes(s.id)) return false;
+          return true;
+        });
+      }
     } else {
-      // Formal Education: Active, EMIS terdaftar, in selectedLembaga, not in current selectedKelas
+      // Formal Education
+      const isCalonClass = isDefaultClass(selectedKelas);
       const currentClassStudentIds = selectedKelas ? getStudentsInClass(selectedKelas, selectedLembaga).map(s => s.id) : [];
-      return santriList.filter(s => {
-        if (!isGenderMatch(s.gender, selectedGender)) return false;
-        if (!isAktif(s)) return false;
-        if (!isEmisTerdaftar(s.statusEmis)) return false;
-        if (!isStudentInLembaga(s, selectedLembaga)) return false;
-        if (currentClassStudentIds.includes(s.id)) return false;
-        return true;
-      });
+
+      if (isCalonClass) {
+        return santriList.filter(s => {
+          if (!isGenderMatch(s.gender, selectedGender)) return false;
+          if (!isAktif(s)) return false;
+          if (currentClassStudentIds.includes(s.id)) return false;
+          return true;
+        });
+      } else {
+        return santriList.filter(s => {
+          if (!isGenderMatch(s.gender, selectedGender)) return false;
+          if (!isAktif(s)) return false;
+          if (!isEmisTerdaftar(s.statusEmis)) return false;
+          if (!isStudentInLembaga(s, selectedLembaga)) return false;
+          if (currentClassStudentIds.includes(s.id)) return false;
+          return true;
+        });
+      }
     }
   };
 
