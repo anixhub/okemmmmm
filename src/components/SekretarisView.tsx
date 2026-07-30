@@ -1501,7 +1501,7 @@ export default function SekretarisView({
                     onClick={() => setMonitoringActiveTab('wajib')}
                     className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-1.5 h-9 rounded-lg font-display text-xs font-bold transition-all cursor-pointer ${
                       monitoringActiveTab === 'wajib'
-                        ? 'bg-rose-500 text-white shadow-xs'
+                        ? 'bg-emerald-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                     }`}
                   >
@@ -1520,7 +1520,7 @@ export default function SekretarisView({
                     onClick={() => setMonitoringActiveTab('tidak_wajib')}
                     className={`flex-1 min-w-0 flex items-center justify-center gap-1.5 px-2 py-1.5 h-9 rounded-lg font-display text-xs font-bold transition-all cursor-pointer ${
                       monitoringActiveTab === 'tidak_wajib'
-                        ? 'bg-slate-800 text-white shadow-xs'
+                        ? 'bg-emerald-600 text-white shadow-xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                     }`}
                   >
