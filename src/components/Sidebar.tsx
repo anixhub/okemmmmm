@@ -72,8 +72,7 @@ const MENU_ITEMS: MenuItem[] = [
     activeColor: 'bg-emerald-50/80 text-emerald-700 border-emerald-200',
     submenus: [
       { id: 'overview', label: 'Overview' },
-      { id: 'santri', label: 'Data Induk Santri' },
-      { id: 'monitoring', label: 'Monitoring' }
+      { id: 'santri', label: 'Data Induk Santri' }
     ] 
   },
   { 

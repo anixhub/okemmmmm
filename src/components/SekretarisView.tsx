@@ -49,7 +49,6 @@ import BulkEditModal from './sekretaris/BulkEditModal';
 import DeleteConfirmModal from './sekretaris/DeleteConfirmModal';
 import SantriFormModal from './sekretaris/SantriFormModal';
 import OverviewSubModule from './sekretaris/OverviewSubModule';
-import MonitoringSubModule from './sekretaris/MonitoringSubModule';
 import AgeFilterModal, { AgeFilterConfig, DEFAULT_AGE_FILTER_CONFIG, calculateAgeOnDate } from './sekretaris/AgeFilterModal';
 
 // Extracted Modular Components
@@ -63,12 +62,12 @@ interface SekretarisViewProps {
   onBulkAddSantri?: (newSantriList: Santri[]) => void;
   onUpdateSantri?: (updatedSantri: Santri) => void;
   onDeleteSantri?: (id: string) => void;
-  initialSubTab?: 'overview' | 'santri' | 'monitoring';
+  initialSubTab?: 'overview' | 'santri';
   isSelectionMode?: boolean;
   setIsSelectionMode?: (val: boolean) => void;
 }
 
-type SubTab = 'overview' | 'santri' | 'monitoring';
+type SubTab = 'overview' | 'santri';
 type ViewMode = 'table' | 'card';
 
 export default function SekretarisView({ 
@@ -89,7 +88,7 @@ export default function SekretarisView({
     }
     return 'card';
   });
-  const [isMonitoringMode, setIsMonitoringMode] = useState(true);
+  const [isMonitoringMode, setIsMonitoringMode] = useState(false);
   const [monitoringActiveTab, setMonitoringActiveTab] = useState<'wajib' | 'tidak_wajib'>('wajib');
   const [showMandatoryConfigModal, setShowMandatoryConfigModal] = useState(false);
   const [mandatoryKeys, setMandatoryKeys] = useState<(keyof Santri)[]>(() => {
@@ -1260,8 +1259,7 @@ export default function SekretarisView({
     <div className="space-y-6">
       
       {/* Tab Switcher & Action Headers inside Sticky Wrapper */}
-      {subTab !== 'monitoring' && (
-        <div className="bg-slate-50/60 -mx-4 px-4 py-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 space-y-4 border-b border-slate-200/50">
+      <div className="bg-slate-50/60 -mx-4 px-4 py-4 sm:-mx-6 sm:px-6 md:-mx-8 md:px-8 space-y-4 border-b border-slate-200/50">
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="font-display text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl flex flex-wrap items-center gap-x-2">
@@ -1404,6 +1402,7 @@ export default function SekretarisView({
             </div>
           )}
         </div>
+      </div>
 
         {/* Monitoring Mode Report Summary Cards */}
         {isMonitoringMode && subTab === 'santri' && viewMode === 'table' && (
@@ -2344,8 +2343,6 @@ export default function SekretarisView({
         </AnimatePresence>
       </div>
       )}
-      </div>
-      )}
 
       {/* Floating Bulk Actions Bar on Mobile (sticky, always below the search/controls card but remains floating at top when scrolled) */}
       {isSelectionMode && subTab === 'santri' && (
@@ -2492,8 +2489,6 @@ export default function SekretarisView({
       <div className="min-h-[400px]">
         {subTab === 'overview' ? (
           <OverviewSubModule santriList={santriList} />
-        ) : subTab === 'monitoring' ? (
-          <MonitoringSubModule santriList={santriList} />
         ) : (
           filteredSantri.length === 0 ? (
             <EmptyState message="Santri tidak ditemukan dengan kriteria pencarian ini." />

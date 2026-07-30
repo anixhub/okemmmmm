@@ -405,39 +405,47 @@ export async function deleteTableRow(table: string, localKey: string, id: string
   return true;
 }
 
-// Upload file
+// Upload file with resilient base64 fallback
 export async function uploadFileToStorage(base64DataUrl: string, originalName: string, fieldKey: string): Promise<string> {
+  if (!base64DataUrl) return '';
+  if (base64DataUrl.startsWith('http://') || base64DataUrl.startsWith('https://')) {
+    return base64DataUrl;
+  }
+
   const match = base64DataUrl.match(/^data:(.*);base64,(.*)$/);
   if (!match) {
-    throw new Error("Format file tidak valid.");
+    return base64DataUrl;
   }
+
   const contentType = match[1];
   const base64Data = match[2];
 
-  const extension = originalName.split('.').pop() || 'bin';
+  const extension = originalName.split('.').pop() || 'jpg';
   const timestamp = Date.now();
   const randomStr = Math.random().toString(36).substring(2, 7);
   const uniqueFileName = `${fieldKey}_${timestamp}_${randomStr}.${extension}`;
 
-  const res = await fetch(getApiUrl("/api/upload"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      fileName: uniqueFileName,
-      fileBase64: base64Data,
-      contentType: contentType
-    })
-  });
+  try {
+    const res = await fetch(getApiUrl("/api/upload"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        fileName: uniqueFileName,
+        fileBase64: base64Data,
+        contentType: contentType
+      })
+    });
 
-  if (!res.ok) {
-    const errData = await safeJsonParse(res).catch(() => ({}));
-    throw new Error(errData.error || "Gagal mengunggah file ke server.");
+    if (res.ok) {
+      const result = await safeJsonParse(res);
+      if (result && result.success && result.publicUrl) {
+        return getApiUrl(result.publicUrl);
+      }
+    }
+  } catch (err) {
+    console.warn("Server upload endpoint error or unavailable, using base64 fallback:", err);
   }
 
-  const result = await safeJsonParse(res);
-  if (result.success && result.publicUrl) {
-    return result.publicUrl;
-  } else {
-    throw new Error(result.error || "Gagal mendapatkan URL file dari server.");
-  }
+  // Self-contained persistent base64 fallback
+  return base64DataUrl;
 }
