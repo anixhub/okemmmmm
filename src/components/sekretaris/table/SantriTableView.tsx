@@ -634,6 +634,8 @@ export default function SantriTableView({
   const [isScrolled, setIsScrolled] = React.useState(false);
   const [stickyTop, setStickyTop] = React.useState(148);
   const [floatingHeaderStyle, setFloatingHeaderStyle] = React.useState({ left: 0, width: 0 });
+  const [floatingTableWidth, setFloatingTableWidth] = React.useState<number>(0);
+  const [colWidths, setColWidths] = React.useState<number[]>([]);
 
   const floatingHeaderRef = React.useRef<HTMLDivElement>(null);
   const floatingHeaderOuterRef = React.useRef<HTMLDivElement>(null);
@@ -706,6 +708,25 @@ export default function SantriTableView({
       left: containerRect.left,
       width: containerRect.width,
     });
+
+    const tableEl = container.querySelector('table');
+    if (tableEl) {
+      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+      if (fullW > 0) setFloatingTableWidth(fullW);
+
+      const mainThs = tableEl.querySelectorAll('thead tr th');
+      if (mainThs && mainThs.length > 0) {
+        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+        if (widths.some(w => w > 0)) {
+          setColWidths(prev => {
+            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+              return prev;
+            }
+            return widths;
+          });
+        }
+      }
+    }
   };
 
   // Recalculate horizontal scroll buttons and scroll stickiness on layout changes
@@ -990,7 +1011,7 @@ export default function SantriTableView({
 
   const scrolledHeaderClass = 'bg-slate-50 text-slate-400 border-b border-slate-100';
 
-  const renderSortHeader = (key: string, label: string, isSticky: boolean = false, widthClass: string = '', subtext?: string) => {
+  const renderSortHeader = (key: string, label: string, isSticky: boolean = false, widthClass: string = '', subtext?: string, styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
     const stickyLeftClass = key === 'nama'
       ? (isSelectionMode ? 'sm:left-[112px] left-[112px]' : 'sm:left-[64px] left-[64px]')
@@ -1026,6 +1047,7 @@ export default function SantriTableView({
           }
         }}
         onMouseLeave={() => setHoveredHeaderTooltip(null)}
+        style={styleOverride}
         className={`px-4 py-3 cursor-pointer transition-all select-none font-display text-xs font-bold uppercase tracking-wider sticky top-0 relative group/header ${scrolledHeaderClass} ${
           isSticky 
             ? `${stickyLeftClass} z-30 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] md:w-[272px] w-[200px] md:min-w-[272px] min-w-[200px] md:max-w-[272px] max-w-[200px] border-r` 
@@ -1080,97 +1102,107 @@ export default function SantriTableView({
     );
   };
 
-  const renderTableHeadContents = (headerClass: string) => (
-    <tr>
-      {isSelectionMode && (
-        <th className={`px-3 py-4 text-center sticky top-0 left-0 z-35 border-r border-slate-100 w-12 min-w-[48px] transition-all duration-300 relative ${headerClass}`}>
-          <div className="flex items-center justify-center">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
-              checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  const newIds = [...selectedSantriIds];
-                  paginatedSantri.forEach(s => {
-                     if (!newIds.includes(s.id)) {
-                       newIds.push(s.id);
-                     }
-                  });
-                  setSelectedSantriIds(newIds);
-                } else {
-                  const paginatedIds = paginatedSantri.map(s => s.id);
-                  setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
-                }
-              }}
-            />
-          </div>
+  const renderTableHeadContents = (headerClass: string, isFloatingHeader: boolean = false) => {
+    let colIdx = 0;
+    const getStyle = () => {
+      const idx = colIdx++;
+      if (!isFloatingHeader || !colWidths || !colWidths[idx]) return undefined;
+      const w = colWidths[idx];
+      return { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px`, boxSizing: 'border-box' as const };
+    };
+
+    return (
+      <tr>
+        {isSelectionMode && (
+          <th style={getStyle()} className={`px-3 py-4 text-center sticky top-0 left-0 z-35 border-r border-slate-100 w-12 min-w-[48px] transition-all duration-300 relative ${headerClass}`}>
+            <div className="flex items-center justify-center">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    const newIds = [...selectedSantriIds];
+                    paginatedSantri.forEach(s => {
+                       if (!newIds.includes(s.id)) {
+                         newIds.push(s.id);
+                       }
+                    });
+                    setSelectedSantriIds(newIds);
+                  } else {
+                    const paginatedIds = paginatedSantri.map(s => s.id);
+                    setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
+                  }
+                }}
+              />
+            </div>
+            {isMonitoringMode && (
+              <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-emerald-500" />
+            )}
+          </th>
+        )}
+        {/* Nomor Column (Sticky Left) */}
+        <th style={getStyle()} className={`px-2 py-4 sticky top-0 ${isSelectionMode ? 'sm:left-[48px] left-[48px]' : 'sm:left-0 left-0'} z-35 w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider border-r border-slate-100 text-center transition-all duration-300 relative ${headerClass}`}>
+          No.
           {isMonitoringMode && (
-            <div className="absolute bottom-0 left-0 right-0 h-1.5 bg-emerald-500" />
+            <div
+              className={`absolute bottom-0 left-0 right-0 h-1.5 transition-colors ${
+                isNoColumnComplete() ? 'bg-emerald-500' : 'bg-rose-500'
+              }`}
+              title={isNoColumnComplete() ? 'Semua santri data wajibnya lengkap' : 'Ada santri data wajibnya belum lengkap'}
+            />
           )}
         </th>
-      )}
-      {/* Nomor Column (Sticky Left) */}
-      <th className={`px-2 py-4 sticky top-0 ${isSelectionMode ? 'sm:left-[48px] left-[48px]' : 'sm:left-0 left-0'} z-35 w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider border-r border-slate-100 text-center transition-all duration-300 relative ${headerClass}`}>
-        No.
-        {isMonitoringMode && (
-          <div
-            className={`absolute bottom-0 left-0 right-0 h-1.5 transition-colors ${
-              isNoColumnComplete() ? 'bg-emerald-500' : 'bg-rose-500'
-            }`}
-            title={isNoColumnComplete() ? 'Semua santri data wajibnya lengkap' : 'Ada santri data wajibnya belum lengkap'}
-          />
-        )}
-      </th>
-      {/* Selalu Terlihat: Nama */}
-      {renderSortHeader('nama', 'Nama Lengkap', true)}
-      {shouldShowColumn('nis') && renderSortHeader('nis', 'NIS', false, 'w-[95px] min-w-[95px]')}
-      {shouldShowColumn('nisn') && renderSortHeader('nisn', 'NISN', false, 'w-[110px] min-w-[110px]')}
-      {shouldShowColumn('nik') && renderSortHeader('nik', 'NIK', false, 'w-[155px] min-w-[155px]')}
-      
-      {/* Kolom Umur jika Filter Umur Aktif */}
-      {ageFilterConfig?.enabled && renderSortHeader('umur', 'Umur', false, 'w-[125px] min-w-[125px]', getAgeHeaderSubtext(ageFilterConfig))}
+        {/* Selalu Terlihat: Nama */}
+        {renderSortHeader('nama', 'Nama Lengkap', true, '', undefined, getStyle())}
+        {shouldShowColumn('nis') && renderSortHeader('nis', 'NIS', false, 'w-[95px] min-w-[95px]', undefined, getStyle())}
+        {shouldShowColumn('nisn') && renderSortHeader('nisn', 'NISN', false, 'w-[110px] min-w-[110px]', undefined, getStyle())}
+        {shouldShowColumn('nik') && renderSortHeader('nik', 'NIK', false, 'w-[155px] min-w-[155px]', undefined, getStyle())}
+        
+        {/* Kolom Umur jika Filter Umur Aktif */}
+        {ageFilterConfig?.enabled && renderSortHeader('umur', 'Umur', false, 'w-[125px] min-w-[125px]', getAgeHeaderSubtext(ageFilterConfig), getStyle())}
 
-      {/* Toggable & Monitoring columns */}
-      {shouldShowColumn('nism') && renderSortHeader('nism', 'NISM', false, 'w-[110px] min-w-[110px]')}
-      {shouldShowColumn('noKk') && renderSortHeader('noKk', 'No. KK', false, 'w-[155px] min-w-[155px]')}
-      {shouldShowColumn('tempatLahir') && renderSortHeader('tempatLahir', 'Tempat Lahir', false, 'w-[125px] min-w-[125px]')}
-      {shouldShowColumn('tanggalLahir') && renderSortHeader('tanggalLahir', 'Tanggal Lahir', false, 'w-[115px] min-w-[115px]')}
-      {shouldShowColumn('gender') && renderSortHeader('gender', 'Gender', false, 'w-[90px] min-w-[90px]')}
-      {shouldShowColumn('pendidikanTerakhir') && renderSortHeader('pendidikanTerakhir', 'Pendidikan Terakhir', false, 'w-[160px] min-w-[160px]')}
-      {shouldShowColumn('pendidikanFormal') && renderSortHeader('pendidikanFormal', 'Pendidikan Formal', false, 'w-[190px] min-w-[190px]')}
-      {shouldShowColumn('anakKe') && renderSortHeader('anakKe', 'Anak Ke', false, 'w-[85px] min-w-[85px]')}
-      {shouldShowColumn('dariBersaudara') && renderSortHeader('dariBersaudara', 'Jumlah Saudara', false, 'w-[120px] min-w-[120px]')}
-      {shouldShowColumn('namaAyah') && renderSortHeader('namaAyah', 'Nama Ayah', false, 'w-[150px] min-w-[150px]')}
-      {shouldShowColumn('nikAyah') && renderSortHeader('nikAyah', 'NIK Ayah', false, 'w-[155px] min-w-[155px]')}
-      {shouldShowColumn('pekerjaanAyah') && renderSortHeader('pekerjaanAyah', 'Pekerjaan Ayah', false, 'w-[140px] min-w-[140px]')}
-      {shouldShowColumn('pendidikanAyah') && renderSortHeader('pendidikanAyah', 'Pendidikan Ayah', false, 'w-[130px] min-w-[130px]')}
-      {shouldShowColumn('namaIbu') && renderSortHeader('namaIbu', 'Nama Ibu', false, 'w-[150px] min-w-[150px]')}
-      {shouldShowColumn('nikIbu') && renderSortHeader('nikIbu', 'NIK Ibu', false, 'w-[155px] min-w-[155px]')}
-      {shouldShowColumn('pekerjaanIbu') && renderSortHeader('pekerjaanIbu', 'Pekerjaan Ibu', false, 'w-[140px] min-w-[140px]')}
-      {shouldShowColumn('pendidikanIbu') && renderSortHeader('pendidikanIbu', 'Pendidikan Ibu', false, 'w-[130px] min-w-[130px]')}
-      {shouldShowColumn('alamat') && renderSortHeader('alamat', 'Alamat', false, 'w-[180px] min-w-[180px]')}
-      {shouldShowColumn('rt') && renderSortHeader('rt', 'RT', false, 'w-[65px] min-w-[65px]')}
-      {shouldShowColumn('rw') && renderSortHeader('rw', 'RW', false, 'w-[65px] min-w-[65px]')}
-      {shouldShowColumn('desa') && renderSortHeader('desa', 'Desa / Kelurahan', false, 'w-[140px] min-w-[140px]')}
-      {shouldShowColumn('kecamatan') && renderSortHeader('kecamatan', 'Kecamatan', false, 'w-[140px] min-w-[140px]')}
-      {shouldShowColumn('kabupaten') && renderSortHeader('kabupaten', 'Kabupaten / Kota', false, 'w-[150px] min-w-[150px]')}
-      {shouldShowColumn('provinsi') && renderSortHeader('provinsi', 'Provinsi', false, 'w-[150px] min-w-[150px]')}
-      {shouldShowColumn('jarakRumah') && renderSortHeader('jarakRumah', 'Jarak (km)', false, 'w-[100px] min-w-[100px]')}
-      {shouldShowColumn('noHp') && renderSortHeader('noHp', 'No. HP Wali', false, 'w-[130px] min-w-[130px]')}
-      {shouldShowColumn('statusDomisili') && renderSortHeader('statusDomisili', 'Status Domisili', false, 'w-[130px] min-w-[130px]')}
-      {shouldShowColumn('tanggalMasuk') && renderSortHeader('tanggalMasuk', 'Tgl Masuk', false, 'w-[105px] min-w-[105px]')}
-      {shouldShowColumn('tanggalKeluar') && renderSortHeader('tanggalKeluar', 'Tgl Keluar', false, 'w-[105px] min-w-[105px]')}
-      
-      {/* Status & Emis & Verval */}
-      {shouldShowColumn('statusKeanggotaan') && renderSortHeader('statusKeanggotaan', 'Status', false, 'w-[105px] min-w-[105px]')}
-      {shouldShowColumn('statusEmis') && renderSortHeader('statusEmis', 'Emis', false, 'w-[95px] min-w-[95px]')}
-      {shouldShowColumn('statusVerval') && renderSortHeader('statusVerval', 'Verval', false, 'w-[95px] min-w-[95px]')}
-      {shouldShowColumn('catatan') && renderSortHeader('catatan', 'Catatan', false, 'w-[180px] min-w-[180px]')}
-      
-      <th className={`px-2 py-4 text-center font-display text-xs font-bold uppercase tracking-wider sticky top-0 right-0 z-35 shadow-[-2px_0_5px_rgba(0,0,0,0.05)] border-l w-12 min-w-[48px] transition-all duration-300 ${isSelectionMode ? 'hidden md:table-cell' : 'table-cell'} ${headerClass}`}>Aksi</th>
-    </tr>
-  );
+        {/* Toggable & Monitoring columns */}
+        {shouldShowColumn('nism') && renderSortHeader('nism', 'NISM', false, 'w-[110px] min-w-[110px]', undefined, getStyle())}
+        {shouldShowColumn('noKk') && renderSortHeader('noKk', 'No. KK', false, 'w-[155px] min-w-[155px]', undefined, getStyle())}
+        {shouldShowColumn('tempatLahir') && renderSortHeader('tempatLahir', 'Tempat Lahir', false, 'w-[125px] min-w-[125px]', undefined, getStyle())}
+        {shouldShowColumn('tanggalLahir') && renderSortHeader('tanggalLahir', 'Tanggal Lahir', false, 'w-[115px] min-w-[115px]', undefined, getStyle())}
+        {shouldShowColumn('gender') && renderSortHeader('gender', 'Gender', false, 'w-[90px] min-w-[90px]', undefined, getStyle())}
+        {shouldShowColumn('pendidikanTerakhir') && renderSortHeader('pendidikanTerakhir', 'Pendidikan Terakhir', false, 'w-[160px] min-w-[160px]', undefined, getStyle())}
+        {shouldShowColumn('pendidikanFormal') && renderSortHeader('pendidikanFormal', 'Pendidikan Formal', false, 'w-[190px] min-w-[190px]', undefined, getStyle())}
+        {shouldShowColumn('anakKe') && renderSortHeader('anakKe', 'Anak Ke', false, 'w-[85px] min-w-[85px]', undefined, getStyle())}
+        {shouldShowColumn('dariBersaudara') && renderSortHeader('dariBersaudara', 'Jumlah Saudara', false, 'w-[120px] min-w-[120px]', undefined, getStyle())}
+        {shouldShowColumn('namaAyah') && renderSortHeader('namaAyah', 'Nama Ayah', false, 'w-[150px] min-w-[150px]', undefined, getStyle())}
+        {shouldShowColumn('nikAyah') && renderSortHeader('nikAyah', 'NIK Ayah', false, 'w-[155px] min-w-[155px]', undefined, getStyle())}
+        {shouldShowColumn('pekerjaanAyah') && renderSortHeader('pekerjaanAyah', 'Pekerjaan Ayah', false, 'w-[140px] min-w-[140px]', undefined, getStyle())}
+        {shouldShowColumn('pendidikanAyah') && renderSortHeader('pendidikanAyah', 'Pendidikan Ayah', false, 'w-[130px] min-w-[130px]', undefined, getStyle())}
+        {shouldShowColumn('namaIbu') && renderSortHeader('namaIbu', 'Nama Ibu', false, 'w-[150px] min-w-[150px]', undefined, getStyle())}
+        {shouldShowColumn('nikIbu') && renderSortHeader('nikIbu', 'NIK Ibu', false, 'w-[155px] min-w-[155px]', undefined, getStyle())}
+        {shouldShowColumn('pekerjaanIbu') && renderSortHeader('pekerjaanIbu', 'Pekerjaan Ibu', false, 'w-[140px] min-w-[140px]', undefined, getStyle())}
+        {shouldShowColumn('pendidikanIbu') && renderSortHeader('pendidikanIbu', 'Pendidikan Ibu', false, 'w-[130px] min-w-[130px]', undefined, getStyle())}
+        {shouldShowColumn('alamat') && renderSortHeader('alamat', 'Alamat', false, 'w-[180px] min-w-[180px]', undefined, getStyle())}
+        {shouldShowColumn('rt') && renderSortHeader('rt', 'RT', false, 'w-[65px] min-w-[65px]', undefined, getStyle())}
+        {shouldShowColumn('rw') && renderSortHeader('rw', 'RW', false, 'w-[65px] min-w-[65px]', undefined, getStyle())}
+        {shouldShowColumn('desa') && renderSortHeader('desa', 'Desa / Kelurahan', false, 'w-[140px] min-w-[140px]', undefined, getStyle())}
+        {shouldShowColumn('kecamatan') && renderSortHeader('kecamatan', 'Kecamatan', false, 'w-[140px] min-w-[140px]', undefined, getStyle())}
+        {shouldShowColumn('kabupaten') && renderSortHeader('kabupaten', 'Kabupaten / Kota', false, 'w-[150px] min-w-[150px]', undefined, getStyle())}
+        {shouldShowColumn('provinsi') && renderSortHeader('provinsi', 'Provinsi', false, 'w-[150px] min-w-[150px]', undefined, getStyle())}
+        {shouldShowColumn('jarakRumah') && renderSortHeader('jarakRumah', 'Jarak (km)', false, 'w-[100px] min-w-[100px]', undefined, getStyle())}
+        {shouldShowColumn('noHp') && renderSortHeader('noHp', 'No. HP Wali', false, 'w-[130px] min-w-[130px]', undefined, getStyle())}
+        {shouldShowColumn('statusDomisili') && renderSortHeader('statusDomisili', 'Status Domisili', false, 'w-[130px] min-w-[130px]', undefined, getStyle())}
+        {shouldShowColumn('tanggalMasuk') && renderSortHeader('tanggalMasuk', 'Tgl Masuk', false, 'w-[105px] min-w-[105px]', undefined, getStyle())}
+        {shouldShowColumn('tanggalKeluar') && renderSortHeader('tanggalKeluar', 'Tgl Keluar', false, 'w-[105px] min-w-[105px]', undefined, getStyle())}
+        
+        {/* Status & Emis & Verval */}
+        {shouldShowColumn('statusKeanggotaan') && renderSortHeader('statusKeanggotaan', 'Status', false, 'w-[105px] min-w-[105px]', undefined, getStyle())}
+        {shouldShowColumn('statusEmis') && renderSortHeader('statusEmis', 'Emis', false, 'w-[95px] min-w-[95px]', undefined, getStyle())}
+        {shouldShowColumn('statusVerval') && renderSortHeader('statusVerval', 'Verval', false, 'w-[95px] min-w-[95px]', undefined, getStyle())}
+        {shouldShowColumn('catatan') && renderSortHeader('catatan', 'Catatan', false, 'w-[180px] min-w-[180px]', undefined, getStyle())}
+        
+        <th style={getStyle()} className={`px-2 py-4 text-center font-display text-xs font-bold uppercase tracking-wider sticky top-0 right-0 z-35 shadow-[-2px_0_5px_rgba(0,0,0,0.05)] border-l w-12 min-w-[48px] transition-all duration-300 ${isSelectionMode ? 'hidden md:table-cell' : 'table-cell'} ${headerClass}`}>Aksi</th>
+      </tr>
+    );
+  };
 
   const renderScrollButtons = (isFloating: boolean) => {
     if (!canScrollRight) return null;
@@ -2713,9 +2745,16 @@ export default function SantriTableView({
             }}
             className="overflow-x-auto [&::-webkit-scrollbar]:hidden"
           >
-            <table className="w-max min-w-full border-separate border-spacing-0 text-left text-sm text-slate-600">
+            <table 
+              className="w-max min-w-full border-separate border-spacing-0 text-left text-sm text-slate-600"
+              style={{
+                width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                tableLayout: colWidths.length > 0 ? 'fixed' : 'auto',
+              }}
+            >
               <thead className="text-xs font-semibold uppercase tracking-wider text-slate-400 bg-slate-50">
-                {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100')}
+                {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100', true)}
               </thead>
             </table>
           </div>

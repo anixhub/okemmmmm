@@ -168,6 +168,8 @@ export default function DataAkademikSub({
   const [isScrolled, setIsScrolled] = useState(false);
   const [stickyTop, setStickyTop] = useState(64);
   const [floatingHeaderStyle, setFloatingHeaderStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 });
+  const [floatingTableWidth, setFloatingTableWidth] = useState<number>(0);
+  const [colWidths, setColWidths] = useState<number[]>([]);
 
   const scrollSourceRef = React.useRef<'main' | 'floating' | null>(null);
   const scrollTimeoutRef = React.useRef<number | null>(null);
@@ -233,6 +235,25 @@ export default function DataAkademikSub({
       left: containerRect.left,
       width: containerRect.width,
     });
+
+    const tableEl = container.querySelector('table');
+    if (tableEl) {
+      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+      if (fullW > 0) setFloatingTableWidth(fullW);
+
+      const mainThs = tableEl.querySelectorAll('thead tr th');
+      if (mainThs && mainThs.length > 0) {
+        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+        if (widths.some(w => w > 0)) {
+          setColWidths(prev => {
+            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+              return prev;
+            }
+            return widths;
+          });
+        }
+      }
+    }
   };
 
   useEffect(() => {
@@ -1079,7 +1100,7 @@ export default function DataAkademikSub({
     }
   };
 
-  const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '') => {
+  const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '', styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
     return (
       <th 
@@ -1092,6 +1113,7 @@ export default function DataAkademikSub({
             setSortDirection('asc');
           }
         }}
+        style={styleOverride}
         className={`px-6 py-4 cursor-pointer transition-all select-none font-display text-xs font-bold uppercase tracking-wider hover:bg-indigo-100/50 relative ${
           isSticky 
             ? `static sm:sticky bg-slate-50 hover:bg-slate-100 z-20 ${extraClasses}` 
@@ -1129,55 +1151,65 @@ export default function DataAkademikSub({
     );
   };
 
-  const renderTableHeadContents = (headerClass: string = 'bg-slate-50 text-slate-400 border-b border-slate-100') => (
-    <tr>
-      {isSelectionMode && (
-        <th className={`px-3 py-4 text-center sticky left-0 z-40 border-r border-slate-100 w-12 min-w-[48px] ${headerClass}`}>
-          <div className="flex items-center justify-center">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-              checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  const newIds = [...selectedSantriIds];
-                  paginatedSantri.forEach(s => {
-                    if (!newIds.includes(s.id)) {
-                      newIds.push(s.id);
-                    }
-                  });
-                  setSelectedSantriIds(newIds);
-                } else {
-                  const paginatedIds = paginatedSantri.map(s => s.id);
-                  setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
-                }
-              }}
-            />
-          </div>
+  const renderTableHeadContents = (headerClass: string = 'bg-slate-50 text-slate-400 border-b border-slate-100', isFloatingHeader: boolean = false) => {
+    let colIdx = 0;
+    const getStyle = () => {
+      const idx = colIdx++;
+      if (!isFloatingHeader || !colWidths || !colWidths[idx]) return undefined;
+      const w = colWidths[idx];
+      return { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px`, boxSizing: 'border-box' as const };
+    };
+
+    return (
+      <tr>
+        {isSelectionMode && (
+          <th style={getStyle()} className={`px-3 py-4 text-center sticky left-0 z-40 border-r border-slate-100 w-12 min-w-[48px] ${headerClass}`}>
+            <div className="flex items-center justify-center">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    const newIds = [...selectedSantriIds];
+                    paginatedSantri.forEach(s => {
+                      if (!newIds.includes(s.id)) {
+                        newIds.push(s.id);
+                      }
+                    });
+                    setSelectedSantriIds(newIds);
+                  } else {
+                    const paginatedIds = paginatedSantri.map(s => s.id);
+                    setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
+                  }
+                }}
+              />
+            </div>
+          </th>
+        )}
+
+        <th style={getStyle()} className={`px-2 py-4 static sm:sticky ${
+          isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
+        } z-40 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 text-center w-[42px] min-w-[42px] max-w-[42px] font-display text-xs font-bold uppercase tracking-wider ${headerClass}`}>
+          No.
         </th>
-      )}
 
-      <th className={`px-2 py-4 static sm:sticky ${
-        isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
-      } z-40 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 text-center w-[42px] min-w-[42px] max-w-[42px] font-display text-xs font-bold uppercase tracking-wider ${headerClass}`}>
-        No.
-      </th>
+        {renderSortHeader('nama', 'Nama Lengkap', true, isSelectionMode ? 'sm:left-[90px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]' : 'sm:left-[42px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]', getStyle())}
 
-      {renderSortHeader('nama', 'Nama Lengkap', true, isSelectionMode ? 'sm:left-[90px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]' : 'sm:left-[42px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]')}
+        {renderSortHeader('nis', 'NIS', false, '', getStyle())}
+        {renderSortHeader('alamat', 'Alamat', false, '', getStyle())}
+        {academicType !== 'rombel' ? (
+          activeLembagas.map(lem => renderSortHeader('lembaga_' + lem.id, lem.nama, false, '', getStyle()))
+        ) : (
+          categoriesList.map(cat => renderSortHeader('rombel_' + cat.id, cat.nama, false, '', getStyle()))
+        )}
 
-      {renderSortHeader('nis', 'NIS')}
-      {renderSortHeader('alamat', 'Alamat')}
-      {academicType !== 'rombel' ? (
-        activeLembagas.map(lem => renderSortHeader('lembaga_' + lem.id, lem.nama))
-      ) : (
-        categoriesList.map(cat => renderSortHeader('rombel_' + cat.id, cat.nama))
-      )}
-
-      <th className={`px-2 py-4 text-center w-12 font-display text-xs font-bold uppercase tracking-wider sticky right-0 z-40 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] border-l border-slate-100 ${headerClass}`}>
-        Aksi
-      </th>
-    </tr>
-  );
+        <th style={getStyle()} className={`px-2 py-4 text-center w-12 font-display text-xs font-bold uppercase tracking-wider sticky right-0 z-40 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] border-l border-slate-100 ${headerClass}`}>
+          Aksi
+        </th>
+      </tr>
+    );
+  };
 
   const renderScrollButtons = (isFloating: boolean = false) => {
     if (!canScrollRight) return null;
@@ -1898,9 +1930,16 @@ export default function DataAkademikSub({
               }}
               className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
             >
-              <table className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]">
+              <table 
+                className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]"
+                style={{
+                  width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                  minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                  tableLayout: colWidths.length > 0 ? 'fixed' : 'auto',
+                }}
+              >
                 <thead className="bg-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wider select-none">
-                  {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100')}
+                  {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100', true)}
                 </thead>
               </table>
             </div>

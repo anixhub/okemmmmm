@@ -145,6 +145,8 @@ export default function LembagaKelasSub({
   const [isScrolled, setIsScrolled] = useState(false);
   const [stickyTop, setStickyTop] = useState(64);
   const [floatingHeaderStyle, setFloatingHeaderStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 });
+  const [floatingTableWidth, setFloatingTableWidth] = useState<number>(0);
+  const [colWidths, setColWidths] = useState<number[]>([]);
 
   const scrollSourceRef = useRef<'main' | 'floating' | null>(null);
   const scrollTimeoutRef = useRef<number | null>(null);
@@ -195,6 +197,25 @@ export default function LembagaKelasSub({
       left: containerRect.left,
       width: containerRect.width,
     });
+
+    const tableEl = container.querySelector('table');
+    if (tableEl) {
+      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+      if (fullW > 0) setFloatingTableWidth(fullW);
+
+      const mainThs = tableEl.querySelectorAll('thead tr th');
+      if (mainThs && mainThs.length > 0) {
+        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+        if (widths.some(w => w > 0)) {
+          setColWidths(prev => {
+            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+              return prev;
+            }
+            return widths;
+          });
+        }
+      }
+    }
   };
 
   const scrollTable = (direction: 'left' | 'right') => {
@@ -311,11 +332,12 @@ export default function LembagaKelasSub({
     }
   };
 
-  const renderSortableHeader = (label: string, field: 'nama' | 'nis' | 'nisn' | 'nism' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar', extraClass: string, justify: string = 'justify-start') => {
+  const renderSortableHeader = (label: string, field: 'nama' | 'nis' | 'nisn' | 'nism' | 'statusKeanggotaan' | 'statusEmis' | 'statusVerval' | 'kamar', extraClass: string, justify: string = 'justify-start', styleOverride?: React.CSSProperties) => {
     const isSorted = sortField === field;
     return (
       <th 
         onClick={() => handleSort(field)} 
+        style={styleOverride}
         className={`${extraClass} cursor-pointer hover:bg-slate-200 transition-colors select-none text-left`}
       >
         <div className={`flex items-center gap-1.5 ${justify}`}>
@@ -346,6 +368,68 @@ export default function LembagaKelasSub({
           )}
         </div>
       </th>
+    );
+  };
+
+  const renderTableHeadContents = (isFloatingHeader: boolean = false) => {
+    let colIdx = 0;
+    const isAllSelected = filteredStudents.length > 0 && filteredStudents.every(s => selectedStudentIds.includes(s.id));
+    const isSomeSelected = filteredStudents.some(s => selectedStudentIds.includes(s.id));
+    const getStyle = () => {
+      const idx = colIdx++;
+      if (!isFloatingHeader || !colWidths || !colWidths[idx]) return undefined;
+      const w = colWidths[idx];
+      return { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px`, boxSizing: 'border-box' as const };
+    };
+
+    return (
+      <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none">
+        <th style={getStyle()} className="sticky left-0 z-20 w-[42px] min-w-[42px] max-w-[42px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
+          {isSelectionMode ? (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                if (isAllSelected) {
+                  const filteredIdsSet = new Set(filteredStudents.map(s => s.id));
+                  setSelectedStudentIds(prev => prev.filter(id => !filteredIdsSet.has(id)));
+                } else {
+                  const newIds = new Set([...selectedStudentIds, ...filteredStudents.map(s => s.id)]);
+                  setSelectedStudentIds(Array.from(newIds));
+                }
+              }}
+              className={`h-4 w-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${
+                isAllSelected 
+                  ? 'bg-[#00693E] border-[#00693E] text-white' 
+                  : isSomeSelected 
+                    ? 'bg-[#00693E]/20 border-[#00693E] text-[#00693E]' 
+                    : 'border-slate-300 bg-white hover:border-slate-400'
+              }`}
+              title={isAllSelected ? "Batal Pilih Semua" : "Pilih Semua Santri"}
+            >
+              {isAllSelected && <Check className="h-3 w-3 stroke-[3]" />}
+              {!isAllSelected && isSomeSelected && <div className="h-2 w-2 bg-[#00693E] rounded-xs" />}
+            </button>
+          ) : (
+            "No"
+          )}
+        </th>
+        {renderSortableHeader('Profil Santri', 'nama', 'sticky left-[42px] z-20 w-[180px] min-w-[180px] max-w-[180px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative', 'justify-start', getStyle())}
+        {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
+        {renderSortableHeader('NISM', 'nism', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
+        {renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] pl-1 py-4 bg-slate-100', 'justify-start', getStyle())}
+        {activeTab === 'Formal' ? (
+          <>
+            {isCalonPelajarPage && renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+            {!isCalonPelajarPage && renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())}
+          </>
+        ) : (
+          renderSortableHeader('Kamar', 'kamar', 'w-[110px] min-w-[110px] pl-3 py-4 bg-slate-100 border-r border-slate-200', 'justify-start', getStyle())
+        )}
+        <th style={getStyle()} className="sticky right-0 z-20 w-[56px] min-w-[56px] max-w-[56px] px-2 py-4 bg-slate-100 border-l border-slate-200 font-black text-slate-600 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
+          <span>Aksi</span>
+        </th>
+      </tr>
     );
   };
 
@@ -2730,55 +2814,16 @@ export default function LembagaKelasSub({
                                 }}
                                 className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                               >
-                                <table className="w-full text-left border-collapse min-w-[1050px]">
+                                <table 
+                                  className="w-full text-left border-collapse min-w-[1050px]"
+                                  style={{
+                                    width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                                    minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                                    tableLayout: colWidths.length > 0 ? 'fixed' : 'auto',
+                                  }}
+                                >
                                   <thead>
-                                    <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none">
-                                      <th className="sticky left-0 z-20 w-[42px] min-w-[42px] max-w-[42px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
-                                        {isSelectionMode ? (
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              if (isAllSelected) {
-                                                const filteredIdsSet = new Set(filteredStudents.map(s => s.id));
-                                                setSelectedStudentIds(prev => prev.filter(id => !filteredIdsSet.has(id)));
-                                              } else {
-                                                const newIds = new Set([...selectedStudentIds, ...filteredStudents.map(s => s.id)]);
-                                                setSelectedStudentIds(Array.from(newIds));
-                                              }
-                                            }}
-                                            className={`h-4 w-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${
-                                              isAllSelected 
-                                                ? 'bg-[#00693E] border-[#00693E] text-white' 
-                                                : isSomeSelected 
-                                                  ? 'bg-[#00693E]/20 border-[#00693E] text-[#00693E]' 
-                                                  : 'border-slate-300 bg-white hover:border-slate-400'
-                                            }`}
-                                            title={isAllSelected ? "Batal Pilih Semua" : "Pilih Semua Santri"}
-                                          >
-                                            {isAllSelected && <Check className="h-3 w-3 stroke-[3]" />}
-                                            {!isAllSelected && isSomeSelected && <div className="h-2 w-2 bg-[#00693E] rounded-xs" />}
-                                          </button>
-                                        ) : (
-                                          "No"
-                                        )}
-                                      </th>
-                                      {renderSortableHeader('Profil Santri', 'nama', 'sticky left-[42px] z-20 w-[180px] min-w-[180px] max-w-[180px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative')}
-                                      {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100')}
-                                      {renderSortableHeader('NISM', 'nism', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100')}
-                                      {renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] pl-1 py-4 bg-slate-100')}
-                                      {activeTab === 'Formal' ? (
-                                        <>
-                                          {isCalonPelajarPage && renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200')}
-                                          {!isCalonPelajarPage && renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200')}
-                                        </>
-                                      ) : (
-                                        renderSortableHeader('Kamar', 'kamar', 'w-[110px] min-w-[110px] pl-3 py-4 bg-slate-100 border-r border-slate-200')
-                                      )}
-                                      <th className="sticky right-0 z-20 w-[56px] min-w-[56px] max-w-[56px] px-2 py-4 bg-slate-100 border-l border-slate-200 font-black text-slate-600 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
-                                        <span>Aksi</span>
-                                      </th>
-                                    </tr>
+                                    {renderTableHeadContents(true)}
                                   </thead>
                                 </table>
                               </div>
@@ -2795,53 +2840,7 @@ export default function LembagaKelasSub({
                             <table className="w-full text-left border-collapse min-w-[1050px]">
                               {/* Table Header - 100% Solid Background */}
                               <thead>
-                                <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none sticky top-0 z-30 shadow-2xs">
-                                  <th className="sticky left-0 z-20 w-[42px] min-w-[42px] max-w-[42px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
-                                    {isSelectionMode ? (
-                                      <button
-                                        type="button"
-                                        onClick={(e) => {
-                                          e.stopPropagation();
-                                          if (isAllSelected) {
-                                            const filteredIdsSet = new Set(filteredStudents.map(s => s.id));
-                                            setSelectedStudentIds(prev => prev.filter(id => !filteredIdsSet.has(id)));
-                                          } else {
-                                            const newIds = new Set([...selectedStudentIds, ...filteredStudents.map(s => s.id)]);
-                                            setSelectedStudentIds(Array.from(newIds));
-                                          }
-                                        }}
-                                        className={`h-4 w-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${
-                                          isAllSelected 
-                                            ? 'bg-[#00693E] border-[#00693E] text-white' 
-                                            : isSomeSelected 
-                                              ? 'bg-[#00693E]/20 border-[#00693E] text-[#00693E]' 
-                                              : 'border-slate-300 bg-white hover:border-slate-400'
-                                        }`}
-                                        title={isAllSelected ? "Batal Pilih Semua" : "Pilih Semua Santri"}
-                                      >
-                                        {isAllSelected && <Check className="h-3 w-3 stroke-[3]" />}
-                                        {!isAllSelected && isSomeSelected && <div className="h-2 w-2 bg-[#00693E] rounded-xs" />}
-                                      </button>
-                                    ) : (
-                                      "No"
-                                    )}
-                                  </th>
-                                  {renderSortableHeader('Profil Santri', 'nama', 'sticky left-[42px] z-20 w-[180px] min-w-[180px] max-w-[180px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative')}
-                                  {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100')}
-                                  {renderSortableHeader('NISM', 'nism', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100')}
-                                  {renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] pl-1 py-4 bg-slate-100')}
-                                  {activeTab === 'Formal' ? (
-                                    <>
-                                      {isCalonPelajarPage && renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200')}
-                                      {!isCalonPelajarPage && renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200')}
-                                    </>
-                                  ) : (
-                                    renderSortableHeader('Kamar', 'kamar', 'w-[110px] min-w-[110px] pl-3 py-4 bg-slate-100 border-r border-slate-200')
-                                  )}
-                                  <th className="sticky right-0 z-20 w-[56px] min-w-[56px] max-w-[56px] px-2 py-4 bg-slate-100 border-l border-slate-200 font-black text-slate-600 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
-                                    <span>Aksi</span>
-                                  </th>
-                                </tr>
+                                {renderTableHeadContents(false)}
                               </thead>
 
                               {/* Table Body */}

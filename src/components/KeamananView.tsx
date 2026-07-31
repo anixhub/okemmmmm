@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   ShieldAlert, 
   Plus, 
@@ -69,7 +70,7 @@ import { KeamananRecord, Santri, KatalogPelanggaranItem, RuleRepetisi, Perizinan
 import { INITIAL_PERIZINAN } from '../data';
 import SantriDetailModal from './sekretaris/SantriDetailModal';
 import { BirthDatePicker } from './sekretaris/BirthDatePicker';
-import { getPesantrenProfile } from './SekretarisHelper';
+import { getPesantrenProfile, renderSantriAvatar, isCustomPasFoto } from './SekretarisHelper';
 import { fetchTableData, insertTableRow, updateTableRow, deleteTableRow, subscribeRealtimeChanges, snakeToCamel } from '../lib/api';
 import { DEFAULT_ROLES } from '../lib/permissions';
 
@@ -78,6 +79,23 @@ const springTransition = {
   ease: "easeInOut",
   duration: 0.22,
 } as const;
+
+const formatAlamatFormatUser = (s?: Santri | null): string => {
+  if (!s) return '-';
+  const clean = (val?: string) => {
+    if (!val) return '';
+    return val.replace(/^(desa|ds\.|kecamatan|kec\.|kabupaten|kab\.)\s*/i, '').trim();
+  };
+  const d = clean(s.desa);
+  const k = clean(s.kecamatan);
+  const kb = clean(s.kabupaten);
+  
+  if (d || k || kb) {
+    const parts = [d, k, kb].filter(Boolean);
+    return parts.join(', ');
+  }
+  return s.alamat || s.asal || '-';
+};
 
 interface RiwayatIzinRowProps {
   key?: React.Key;
@@ -126,10 +144,6 @@ function RiwayatIzinRow({ rec, santriList }: RiwayatIzinRowProps) {
   const formattedTime = `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 
   const sObj = santriList.find(x => rec.santriId ? x.id === rec.santriId : x.nama === rec.namaSantri);
-  const fallbackPhoto = rec.gender === 'Putra' 
-    ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' 
-    : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100';
-  const photoUrl = sObj?.filePasFoto || fallbackPhoto;
 
   let durationStr = '';
   if (rec.isCabut && rec.tanggalKembali) {
@@ -156,12 +170,13 @@ function RiwayatIzinRow({ rec, santriList }: RiwayatIzinRowProps) {
       {/* Initial View: Avatar, Name, Address & Remaining Time / Status */}
       <div className="flex items-start gap-3 min-w-0">
         <div className="h-9 w-9 rounded-full overflow-hidden border border-indigo-100 bg-indigo-50 shrink-0 flex items-center justify-center">
-          <img
-            src={photoUrl}
-            alt={rec.namaSantri}
-            className="h-full w-full object-cover"
-            referrerPolicy="no-referrer"
-          />
+          {sObj ? (
+            renderSantriAvatar(sObj, "h-full w-full object-cover")
+          ) : (
+            <div className={`h-full w-full flex items-center justify-center font-bold text-xs ${rec.gender === 'Putri' ? 'bg-pink-500 text-white' : 'bg-[#00b0f0] text-white'}`}>
+              {(rec.namaSantri || '?').substring(0, 2).toUpperCase()}
+            </div>
+          )}
         </div>
 
         <div className="flex-1 min-w-0 text-left">
@@ -233,7 +248,7 @@ function RiwayatIzinRow({ rec, santriList }: RiwayatIzinRowProps) {
 
           <p className="text-[10px] text-slate-400 font-bold truncate">
             {sObj 
-              ? `Desa ${sObj.desa || '-'}, Kec. ${sObj.kecamatan || '-'}, Kab. ${sObj.kabupaten || '-'}`
+              ? formatAlamatFormatUser(sObj)
               : `Kelas ${rec.kelas} • Kamar ${rec.kamar}`
             }
           </p>
@@ -425,10 +440,6 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
     : `${days > 0 ? `${days} Hari ` : ''}${pad(hours)}:${pad(minutes)}:${pad(seconds)}`;
 
   const sObj = santriList.find(x => rec.santriId ? x.id === rec.santriId : x.nama === rec.namaSantri);
-  const fallbackPhoto = rec.gender === 'Putra' 
-    ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' 
-    : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100';
-  const photoUrl = sObj?.filePasFoto || fallbackPhoto;
 
   const handleQuickExtend = (daysVal: number, hoursVal: number) => {
     if (!extendReason.trim()) {
@@ -468,12 +479,13 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
         <div className="flex items-start gap-3 min-w-0">
           {/* Foto lingkaran di kiri */}
           <div className="h-11 w-11 rounded-full overflow-hidden border border-indigo-200 bg-indigo-100 shrink-0 flex items-center justify-center">
-            <img
-              src={photoUrl}
-              alt={rec.namaSantri}
-              className="h-full w-full object-cover"
-              referrerPolicy="no-referrer"
-            />
+            {sObj ? (
+              renderSantriAvatar(sObj, "h-full w-full object-cover")
+            ) : (
+              <div className={`h-full w-full flex items-center justify-center font-bold text-xs ${rec.gender === 'Putri' ? 'bg-pink-500 text-white' : 'bg-[#00b0f0] text-white'}`}>
+                {(rec.namaSantri || '?').substring(0, 2).toUpperCase()}
+              </div>
+            )}
           </div>
           {/* Detail di sebelah kanan */}
           <div className="flex-1 min-w-0 text-left">
@@ -501,7 +513,7 @@ function ActiveSantriIzinCard({ rec, santriList, handleReturnToPondok, onExtendD
             </p>
             <p className="text-[10px] text-slate-400 font-medium truncate mt-0.5">
               {sObj 
-                ? `Desa ${sObj.desa || '-'}, Kec. ${sObj.kecamatan || '-'}, Kab. ${sObj.kabupaten || '-'}`
+                ? formatAlamatFormatUser(sObj)
                 : `Kelas ${rec.kelas} • Kamar ${rec.kamar}`
               }
             </p>
@@ -4239,6 +4251,348 @@ export default function KeamananView({
     setCurrentPage(1);
   }, [searchSantri, filterGender, filterClass, filterIndicator, filterStatus, filterKamar]);
 
+  // Floating Table Header & Horizontal Scroll Navigation States for Data Pelanggaran Table
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [stickyTop, setStickyTop] = useState(64);
+  const [floatingHeaderStyle, setFloatingHeaderStyle] = useState({ left: 0, width: 0 });
+  const [floatingTableWidth, setFloatingTableWidth] = useState<number>(0);
+  const [colWidths, setColWidths] = useState<number[]>([]);
+
+  const tableContainerRef = useRef<HTMLDivElement>(null);
+  const floatingHeaderRef = useRef<HTMLDivElement>(null);
+  const floatingHeaderOuterRef = useRef<HTMLDivElement>(null);
+  const scrollSourceRef = useRef<'main' | 'floating' | null>(null);
+  const scrollTimeoutRef = useRef<number | null>(null);
+
+  const updateScrollButtons = useCallback(() => {
+    const container = tableContainerRef.current;
+    if (container) {
+      const { scrollLeft, scrollWidth, clientWidth } = container;
+      const hasHorizontalScroll = scrollWidth > clientWidth + 4;
+      const nextCanScrollLeft = hasHorizontalScroll && scrollLeft > 2;
+      const nextCanScrollRight = hasHorizontalScroll && scrollLeft + clientWidth < scrollWidth - 2;
+      setCanScrollLeft(prev => prev === nextCanScrollLeft ? prev : nextCanScrollLeft);
+      setCanScrollRight(prev => prev === nextCanScrollRight ? prev : nextCanScrollRight);
+    }
+  }, []);
+
+  const scrollTable = (direction: 'left' | 'right') => {
+    const container = tableContainerRef.current;
+    if (container) {
+      scrollSourceRef.current = 'main';
+      const scrollAmount = 300;
+      const targetScroll = direction === 'left' 
+        ? container.scrollLeft - scrollAmount 
+        : container.scrollLeft + scrollAmount;
+      
+      container.scrollTo({
+        left: targetScroll,
+        behavior: 'smooth'
+      });
+    }
+  };
+
+  const handleTableScroll = useCallback(() => {
+    updateScrollButtons();
+    const container = tableContainerRef.current;
+    if (!container) return;
+
+    if (scrollSourceRef.current !== 'floating') {
+      scrollSourceRef.current = 'main';
+      if (scrollTimeoutRef.current) {
+        window.clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = window.setTimeout(() => {
+        scrollSourceRef.current = null;
+      }, 150);
+
+      if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
+        floatingHeaderRef.current.scrollLeft = container.scrollLeft;
+      }
+    }
+
+    const mainHeader = document.querySelector('header');
+    const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
+    const computedStickyTop = mainHeaderHeight;
+
+    setStickyTop(prev => prev === computedStickyTop ? prev : computedStickyTop);
+
+    const containerRect = container.getBoundingClientRect();
+    const isHeaderFloating = 
+      containerRect.top <= computedStickyTop && 
+      containerRect.bottom > (computedStickyTop + 48);
+    setIsScrolled(prev => prev === isHeaderFloating ? prev : isHeaderFloating);
+
+    setFloatingHeaderStyle(prev => {
+      if (Math.abs(prev.left - containerRect.left) < 0.5 && Math.abs(prev.width - containerRect.width) < 0.5) {
+        return prev;
+      }
+      return { left: containerRect.left, width: containerRect.width };
+    });
+
+    const tableEl = container.querySelector('table');
+    if (tableEl) {
+      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+      if (fullW > 0) {
+        setFloatingTableWidth(prev => Math.abs(prev - fullW) < 0.5 ? prev : fullW);
+      }
+
+      const mainThs = tableEl.querySelectorAll('thead tr th');
+      if (mainThs && mainThs.length > 0) {
+        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+        if (widths.some(w => w > 0)) {
+          setColWidths(prev => {
+            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+              return prev;
+            }
+            return widths;
+          });
+        }
+      }
+    }
+  }, [updateScrollButtons]);
+
+  useEffect(() => {
+    if (displayTab === 'catatan') {
+      handleTableScroll();
+      window.addEventListener('resize', handleTableScroll);
+      window.addEventListener('scroll', handleTableScroll, true);
+      return () => {
+        window.removeEventListener('resize', handleTableScroll);
+        window.removeEventListener('scroll', handleTableScroll, true);
+      };
+    }
+  }, [displayTab, handleTableScroll]);
+
+  const renderScrollButtons = (isFloating: boolean) => {
+    if (!canScrollRight) return null;
+    return (
+      <button
+        id={isFloating ? "table-scroll-right-btn-floating" : "table-scroll-right-btn"}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          scrollTable('right');
+        }}
+        className={`absolute right-0 translate-x-1/2 ${
+          isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
+        } z-[100] flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
+        title="Gulir Kanan"
+      >
+        <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
+      </button>
+    );
+  };
+
+  const renderTableHeadContents = (headerClass: string, isFloatingHeader: boolean = false) => {
+    let colIdx = 0;
+    const getStyle = () => {
+      const idx = colIdx++;
+      if (!isFloatingHeader || !colWidths || !colWidths[idx]) return undefined;
+      const w = colWidths[idx];
+      return { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px`, boxSizing: 'border-box' as const };
+    };
+
+    return (
+      <tr className={`text-xs font-semibold uppercase tracking-wider select-none ${headerClass}`}>
+        <th style={getStyle()} className={`py-3 px-4 text-center w-12 text-slate-400 md:sticky md:left-0 md:bg-slate-50 md:z-20 md:border-r md:border-slate-100 ${headerClass}`}>No</th>
+        
+        {/* Nama (Sortable by 'nama') */}
+        <th 
+          style={getStyle()}
+          onClick={() => {
+            if (sortKey === 'nama') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('nama');
+              setSortDirection('asc');
+            }
+          }}
+          className={`py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none md:sticky md:left-12 md:bg-slate-50 md:z-20 md:border-r md:border-slate-100 ${headerClass}`}
+        >
+          <div className="flex items-center gap-1.5 justify-start">
+            <span className="text-slate-400">Nama</span>
+            {sortKey === 'nama' ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+        </th>
+
+        {/* NIS (Sortable by 'nis') */}
+        <th 
+          style={getStyle()}
+          onClick={() => {
+            if (sortKey === 'nis') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('nis');
+              setSortDirection('asc');
+            }
+          }}
+          className={`py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none ${headerClass}`}
+        >
+          <div className="flex items-center gap-1.5 justify-start">
+            <span className="text-slate-400">NIS</span>
+            {sortKey === 'nis' ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+        </th>
+
+        {/* Alamat (Sortable by 'alamat') */}
+        <th 
+          style={getStyle()}
+          onClick={() => {
+            if (sortKey === 'alamat') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('alamat');
+              setSortDirection('asc');
+            }
+          }}
+          className={`py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none ${headerClass}`}
+        >
+          <div className="flex items-center gap-1.5 justify-start">
+            <span className="text-slate-400">Alamat</span>
+            {sortKey === 'alamat' ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+        </th>
+
+        {/* Status (Sortable by 'status') */}
+        <th 
+          style={getStyle()}
+          onClick={() => {
+            if (sortKey === 'status') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('status');
+              setSortDirection('asc');
+            }
+          }}
+          className={`py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none ${headerClass}`}
+        >
+          <div className="flex items-center gap-1.5 justify-start">
+            <span className="text-slate-400">Status</span>
+            {sortKey === 'status' ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+        </th>
+
+        {/* Jml Pelanggaran (Sortable by 'pelanggaran') */}
+        <th 
+          style={getStyle()}
+          onClick={() => {
+            if (sortKey === 'pelanggaran') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('pelanggaran');
+              setSortDirection('asc');
+            }
+          }}
+          className={`py-3 px-4 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none ${headerClass}`}
+        >
+          <div className="flex items-center gap-1.5 justify-center">
+            <span className="text-slate-400">Jumlah</span>
+            {sortKey === 'pelanggaran' ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+        </th>
+
+        {/* Total Poin (Sortable by 'poin') */}
+        <th 
+          style={getStyle()}
+          onClick={() => {
+            if (sortKey === 'poin') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('poin');
+              setSortDirection('asc');
+            }
+          }}
+          className={`py-3 px-4 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none ${headerClass}`}
+        >
+          <div className="flex items-center gap-1.5 justify-center">
+            <span className="text-slate-400">Total Poin</span>
+            {sortKey === 'poin' ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+        </th>
+
+        {/* Indikator Kedisiplinan (Sortable by 'indikator') */}
+        <th 
+          style={getStyle()}
+          onClick={() => {
+            if (sortKey === 'indikator') {
+              setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+            } else {
+              setSortKey('indikator');
+              setSortDirection('asc');
+            }
+          }}
+          className={`py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none ${headerClass}`}
+        >
+          <div className="flex items-center gap-1.5 justify-start">
+            <span className="text-slate-400">Kedisiplinan</span>
+            {sortKey === 'indikator' ? (
+              sortDirection === 'asc' ? (
+                <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              ) : (
+                <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
+              )
+            ) : (
+              <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
+            )}
+          </div>
+        </th>
+
+        <th style={getStyle()} className={`py-3 px-4 text-center w-12 min-w-[48px] text-slate-400 sticky right-0 bg-slate-50 z-20 border-l border-slate-100 select-none ${headerClass}`}>Aksi</th>
+      </tr>
+    );
+  };
+
   // FILTERING: Riwayat kasus kronologis
   const filteredRiwayat = activeKeamananList.filter(rec => {
     if (!rec) return false;
@@ -4682,10 +5036,6 @@ export default function KeamananView({
                       </div>
                     ) : (
                       topViolators.map((item, idx) => {
-                        const fallbackPhoto = item.santri?.gender === 'Putra' 
-                          ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' 
-                          : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100';
-                        const photoUrl = item.santri?.filePasFoto || fallbackPhoto;
                         const discipline = getDisciplineIndicator(item.points);
 
                         return (
@@ -4708,13 +5058,14 @@ export default function KeamananView({
                               </div>
 
                               {/* Student Photo */}
-                              <div className="h-9 w-9 rounded-full overflow-hidden border border-indigo-100 bg-indigo-50 shrink-0">
-                                <img
-                                  src={photoUrl}
-                                  alt={item.nama}
-                                  className="h-full w-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
+                              <div className="h-9 w-9 rounded-full overflow-hidden border border-indigo-100 bg-indigo-50 shrink-0 flex items-center justify-center">
+                                {item.santri ? (
+                                  renderSantriAvatar(item.santri, "h-full w-full object-cover")
+                                ) : (
+                                  <div className={`h-full w-full flex items-center justify-center font-bold text-xs ${item.santri?.gender === 'Putri' ? 'bg-pink-500 text-white' : 'bg-[#00b0f0] text-white'}`}>
+                                    {(item.nama || '?').substring(0, 2).toUpperCase()}
+                                  </div>
+                                )}
                               </div>
 
                               {/* Student info */}
@@ -4873,7 +5224,7 @@ export default function KeamananView({
             {/* Subtab View 1: DAFTAR SANTRI (THE CORE USER REQUESTED FEATURE) */}
             <div className="space-y-4">
                 {/* Search block matching "tabel induk santri" style */}
-                <div className="sticky top-16 z-[45] bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-200/80 shadow-md space-y-3">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm space-y-3">
                   <div className="flex flex-row items-center gap-2 w-full">
                     <div className="relative flex-1">
                       <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pointer-events-none text-slate-400">
@@ -4978,198 +5329,22 @@ export default function KeamananView({
                 </div>
 
                 {/* Main Student Table */}
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-                  <div className={`overflow-x-auto ${paginatedSantris.length > 0 ? 'min-h-[350px]' : ''}`}>
+                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden relative">
+                  {renderScrollButtons(false)}
+                  <div 
+                    ref={tableContainerRef}
+                    onScroll={handleTableScroll}
+                    className={`overflow-x-auto ${paginatedSantris.length > 0 ? 'min-h-[350px]' : ''}`}
+                  >
                     {paginatedSantris.length > 0 ? (
-                      <table className="w-full border-collapse text-left text-xs font-sans">
-                        <thead>
-                          <tr className="bg-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wider select-none">
-                            <th className="py-3 px-4 text-center w-12 md:sticky md:left-0 md:bg-slate-50 md:z-20 md:border-r md:border-slate-100 text-slate-400">No</th>
-                            
-                            {/* Nama (Sortable by 'nama') */}
-                            <th 
-                              onClick={() => {
-                                  if (sortKey === 'nama') {
-                                    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-                                  } else {
-                                    setSortKey('nama');
-                                    setSortDirection('asc');
-                                  }
-                              }}
-                              className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none md:sticky md:left-12 md:bg-slate-50 md:z-20 md:border-r md:border-slate-100"
-                            >
-                              <div className="flex items-center gap-1.5 justify-start">
-                                <span className="text-slate-400">Nama</span>
-                                {sortKey === 'nama' ? (
-                                  sortDirection === 'asc' ? (
-                                    <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  ) : (
-                                    <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
-                                )}
-                              </div>
-                            </th>
-
-                            {/* NIS (Sortable by 'nis') */}
-                            <th 
-                              onClick={() => {
-                                  if (sortKey === 'nis') {
-                                    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-                                  } else {
-                                    setSortKey('nis');
-                                    setSortDirection('asc');
-                                  }
-                              }}
-                              className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                            >
-                              <div className="flex items-center gap-1.5 justify-start">
-                                <span className="text-slate-400">NIS</span>
-                                {sortKey === 'nis' ? (
-                                  sortDirection === 'asc' ? (
-                                    <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  ) : (
-                                    <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
-                                )}
-                              </div>
-                            </th>
-
-                            {/* Alamat (Sortable by 'alamat') */}
-                            <th 
-                              onClick={() => {
-                                  if (sortKey === 'alamat') {
-                                    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-                                  } else {
-                                    setSortKey('alamat');
-                                    setSortDirection('asc');
-                                  }
-                              }}
-                              className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                            >
-                              <div className="flex items-center gap-1.5 justify-start">
-                                <span className="text-slate-400">Alamat</span>
-                                {sortKey === 'alamat' ? (
-                                  sortDirection === 'asc' ? (
-                                    <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  ) : (
-                                    <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
-                                )}
-                              </div>
-                            </th>
-
-                            {/* Status (Sortable by 'status') */}
-                            <th 
-                              onClick={() => {
-                                  if (sortKey === 'status') {
-                                    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-                                  } else {
-                                    setSortKey('status');
-                                    setSortDirection('asc');
-                                  }
-                              }}
-                              className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                            >
-                              <div className="flex items-center gap-1.5 justify-start">
-                                <span className="text-slate-400">Status</span>
-                                {sortKey === 'status' ? (
-                                  sortDirection === 'asc' ? (
-                                    <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  ) : (
-                                    <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
-                                )}
-                              </div>
-                            </th>
-
-                            {/* Jml Pelanggaran (Sortable by 'pelanggaran') */}
-                            <th 
-                              onClick={() => {
-                                  if (sortKey === 'pelanggaran') {
-                                    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-                                  } else {
-                                    setSortKey('pelanggaran');
-                                    setSortDirection('asc');
-                                  }
-                              }}
-                              className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                            >
-                              <div className="flex items-center gap-1.5 justify-center">
-                                <span className="text-slate-400">Jumlah</span>
-                                {sortKey === 'pelanggaran' ? (
-                                  sortDirection === 'asc' ? (
-                                    <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  ) : (
-                                    <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
-                                )}
-                              </div>
-                            </th>
-
-                            {/* Total Poin (Sortable by 'poin') */}
-                            <th 
-                              onClick={() => {
-                                  if (sortKey === 'poin') {
-                                    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-                                  } else {
-                                    setSortKey('poin');
-                                    setSortDirection('asc');
-                                  }
-                              }}
-                              className="py-3 px-4 text-center cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                            >
-                              <div className="flex items-center gap-1.5 justify-center">
-                                <span className="text-slate-400">Total Poin</span>
-                                {sortKey === 'poin' ? (
-                                  sortDirection === 'asc' ? (
-                                    <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  ) : (
-                                    <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
-                                )}
-                              </div>
-                            </th>
-
-                            {/* Indikator Kedisiplinan (Sortable by 'indikator') */}
-                            <th 
-                              onClick={() => {
-                                  if (sortKey === 'indikator') {
-                                    setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-                                  } else {
-                                    setSortKey('indikator');
-                                    setSortDirection('asc');
-                                  }
-                              }}
-                              className="py-3 px-4 cursor-pointer hover:bg-slate-100 transition-colors select-none"
-                            >
-                              <div className="flex items-center gap-1.5 justify-start">
-                                <span className="text-slate-400">Kedisiplinan</span>
-                                {sortKey === 'indikator' ? (
-                                  sortDirection === 'asc' ? (
-                                    <ArrowUp className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  ) : (
-                                    <ArrowDown className="h-3.5 w-3.5 text-indigo-600 shrink-0" />
-                                  )
-                                ) : (
-                                  <ArrowUpDown className="h-3.5 w-3.5 text-slate-300 hover:text-slate-500 shrink-0" />
-                                )}
-                              </div>
-                            </th>
-
-                            <th className="py-3 px-4 text-center w-12 min-w-[48px] text-slate-400 sticky right-0 bg-slate-50 z-20 border-l border-slate-100 select-none">Aksi</th>
-                          </tr>
+                      <table 
+                        className="w-full border-collapse text-left text-xs font-sans min-w-[900px]"
+                        style={{
+                          tableLayout: colWidths.length > 0 ? 'fixed' : 'auto',
+                        }}
+                      >
+                        <thead className="sticky top-0 z-35">
+                          {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100', false)}
                         </thead>
                         <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                           {paginatedSantris.map((student, idx) => {
@@ -5193,7 +5368,7 @@ export default function KeamananView({
                                 </td>
                                 <td className="py-3.5 px-4">
                                   <span className="text-slate-700 text-xs font-semibold block">
-                                    {[student.desa, student.kecamatan, student.kabupaten].filter(Boolean).join(', ') || 'Alamat belum diatur'}
+                                    {formatAlamatFormatUser(student)}
                                   </span>
                                 </td>
                                 <td className="py-3.5 px-4">
@@ -5479,7 +5654,7 @@ export default function KeamananView({
             {/* Subtab View 2: RIWAYAT KRONOLOGIS SEMUA KASUS */}
             <div className="space-y-4">
                 {/* Search & Kategori filters */}
-                <div className="sticky top-16 z-[45] bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-200/80 shadow-md flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm flex flex-col md:flex-row md:items-center md:justify-between gap-4">
                   <div className="relative flex-1 w-full">
                     <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
                     <input
@@ -6021,12 +6196,7 @@ export default function KeamananView({
                             <div className="flex items-center gap-4.5 min-w-0 flex-1">
                               {/* Foto lingkaran di kiri */}
                               <div className="h-14 w-14 rounded-full overflow-hidden border border-indigo-200 bg-indigo-100 shrink-0 flex items-center justify-center">
-                                <img
-                                  src={s.filePasFoto || (s.gender === 'Putra' ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100')}
-                                  alt={s.nama}
-                                  className="h-full w-full object-cover"
-                                  referrerPolicy="no-referrer"
-                                />
+                                {renderSantriAvatar(s, "h-full w-full object-cover")}
                               </div>
                               {/* Detail di sebelah kanan */}
                               <div className="flex-1 min-w-0 space-y-0.5 text-left">
@@ -6035,7 +6205,7 @@ export default function KeamananView({
                                   NIS: {s.nis || '-'}
                                 </p>
                                 <p className="text-[10px] text-slate-500 font-medium truncate">
-                                  Desa {s.desa || '-'}, Kec. {s.kecamatan || '-'}, Kab. {s.kabupaten || '-'}
+                                  {formatAlamatFormatUser(s)}
                                 </p>
                               </div>
                             </div>
@@ -6109,12 +6279,7 @@ export default function KeamananView({
                                 >
                                   {/* Foto lingkaran di kiri */}
                                   <div className="h-10 w-10 rounded-full overflow-hidden border border-indigo-200 bg-indigo-100 shrink-0 flex items-center justify-center">
-                                    <img
-                                      src={s.filePasFoto || (s.gender === 'Putra' ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100')}
-                                      alt={s.nama}
-                                      className="h-full w-full object-cover"
-                                      referrerPolicy="no-referrer"
-                                    />
+                                    {renderSantriAvatar(s, "h-full w-full object-cover")}
                                   </div>
                                   {/* Detail di sebelah kanan */}
                                   <div className="flex-1 min-w-0 space-y-0.5 text-left">
@@ -6123,7 +6288,7 @@ export default function KeamananView({
                                       NIS: {s.nis || '-'}
                                     </p>
                                     <p className="text-[10px] text-slate-500 font-medium truncate">
-                                      Desa {s.desa || '-'}, Kec. {s.kecamatan || '-'}, Kab. {s.kabupaten || '-'}
+                                      {formatAlamatFormatUser(s)}
                                     </p>
                                   </div>
                                 </button>
@@ -6863,12 +7028,7 @@ export default function KeamananView({
                               >
                                 {/* Foto lingkaran di kiri */}
                                 <div className="h-10 w-10 rounded-full overflow-hidden border border-rose-200 bg-rose-100 shrink-0 flex items-center justify-center">
-                                  <img
-                                    src={s.filePasFoto || (s.gender === 'Putra' ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100')}
-                                    alt={s.nama}
-                                    className="h-full w-full object-cover"
-                                    referrerPolicy="no-referrer"
-                                  />
+                                  {renderSantriAvatar(s, "h-full w-full object-cover")}
                                 </div>
                                 {/* Detail di sebelah kanan */}
                                 <div className="flex-1 min-w-0 space-y-0.5 text-left">
@@ -6877,7 +7037,7 @@ export default function KeamananView({
                                     NIS: {s.nis || '-'}
                                   </p>
                                   <p className="text-[10px] text-slate-500 font-medium truncate">
-                                    Alamat: {[s.desa, s.kecamatan, s.kabupaten].filter(Boolean).join(', ') || '-'}
+                                    Alamat: {formatAlamatFormatUser(s)}
                                   </p>
                                 </div>
                               </button>
@@ -6896,12 +7056,7 @@ export default function KeamananView({
                       <div className="flex items-center gap-4.5 min-w-0 flex-1">
                         {/* Foto lingkaran di kiri */}
                         <div className="h-14 w-14 rounded-full overflow-hidden border border-rose-200 bg-rose-100 shrink-0 flex items-center justify-center">
-                          <img
-                            src={selectedSantri.filePasFoto || (selectedSantri.gender === 'Putra' ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100')}
-                            alt={selectedSantri.nama}
-                            className="h-full w-full object-cover"
-                            referrerPolicy="no-referrer"
-                          />
+                          {renderSantriAvatar(selectedSantri, "h-full w-full object-cover")}
                         </div>
                         {/* Detail di sebelah kanan */}
                         <div className="flex-1 min-w-0 space-y-0.5 text-left">
@@ -6910,7 +7065,7 @@ export default function KeamananView({
                             NIS: {selectedSantri.nis || '-'}
                           </p>
                           <p className="text-[10px] text-slate-500 font-medium truncate">
-                            Alamat: {[selectedSantri.desa, selectedSantri.kecamatan, selectedSantri.kabupaten].filter(Boolean).join(', ') || '-'}
+                            Alamat: {formatAlamatFormatUser(selectedSantri)}
                           </p>
                         </div>
                       </div>
@@ -8467,12 +8622,7 @@ export default function KeamananView({
                           <div className="flex items-center gap-4.5 min-w-0 flex-1">
                             {/* Foto lingkaran di kiri */}
                             <div className="h-14 w-14 rounded-full overflow-hidden border border-indigo-200 bg-indigo-100 shrink-0 flex items-center justify-center">
-                              <img
-                                src={s.filePasFoto || (s.gender === 'Putra' ? 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100' : 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=100')}
-                                alt={s.nama}
-                                className="h-full w-full object-cover"
-                                referrerPolicy="no-referrer"
-                              />
+                              {renderSantriAvatar(s, "h-full w-full object-cover")}
                             </div>
                             {/* Detail di sebelah kanan */}
                             <div className="flex-1 min-w-0 space-y-0.5 text-left">
@@ -8481,7 +8631,7 @@ export default function KeamananView({
                                 NIS: {s.nis || '-'}
                               </p>
                               <p className="text-[10px] text-slate-500 font-medium truncate">
-                                Desa {s.desa || '-'}, Kec. {s.kecamatan || '-'}, Kab. {s.kabupaten || '-'}
+                                {formatAlamatFormatUser(s)}
                               </p>
                             </div>
                           </div>
@@ -9041,6 +9191,56 @@ export default function KeamananView({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Floating Table Header Portal for Data Pelanggaran */}
+      {typeof document !== 'undefined' && isScrolled && displayTab === 'catatan' && createPortal(
+        <div
+          ref={floatingHeaderOuterRef}
+          className="fixed z-[45] bg-slate-50 border border-slate-100 shadow-md rounded-t-2xl overflow-visible"
+          style={{
+            top: `${stickyTop}px`,
+            left: `${floatingHeaderStyle.left}px`,
+            width: `${floatingHeaderStyle.width}px`,
+          }}
+        >
+          <div
+            ref={floatingHeaderRef}
+            onScroll={(e) => {
+              const floating = e.currentTarget;
+              if (scrollSourceRef.current !== 'main') {
+                scrollSourceRef.current = 'floating';
+                if (scrollTimeoutRef.current) {
+                  window.clearTimeout(scrollTimeoutRef.current);
+                }
+                scrollTimeoutRef.current = window.setTimeout(() => {
+                  scrollSourceRef.current = null;
+                }, 150);
+
+                if (tableContainerRef.current && tableContainerRef.current.scrollLeft !== floating.scrollLeft) {
+                  tableContainerRef.current.scrollLeft = floating.scrollLeft;
+                }
+              }
+            }}
+            className="overflow-x-auto [&::-webkit-scrollbar]:hidden"
+          >
+            <table 
+              className="w-full border-collapse text-left text-xs font-sans min-w-[900px]"
+              style={{
+                width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                tableLayout: colWidths.length > 0 ? 'fixed' : 'auto',
+              }}
+            >
+              <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400">
+                {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100', true)}
+              </thead>
+            </table>
+          </div>
+          {/* Scroll Navigation Buttons inside Floating Header */}
+          {renderScrollButtons(true)}
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

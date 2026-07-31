@@ -147,6 +147,8 @@ export default function DataKamarSantriSub({
   const [isScrolled, setIsScrolled] = useState(false);
   const [stickyTop, setStickyTop] = useState(64);
   const [floatingHeaderStyle, setFloatingHeaderStyle] = useState({ left: 0, width: 0 });
+  const [floatingTableWidth, setFloatingTableWidth] = useState<number>(0);
+  const [colWidths, setColWidths] = useState<number[]>([]);
 
   const containerRef = React.useRef<HTMLDivElement>(null);
   const floatingHeaderRef = React.useRef<HTMLDivElement>(null);
@@ -215,6 +217,25 @@ export default function DataKamarSantriSub({
       left: containerRect.left,
       width: containerRect.width,
     });
+
+    const tableEl = container.querySelector('table');
+    if (tableEl) {
+      const fullW = Math.max(tableEl.scrollWidth, tableEl.getBoundingClientRect().width);
+      if (fullW > 0) setFloatingTableWidth(fullW);
+
+      const mainThs = tableEl.querySelectorAll('thead tr th');
+      if (mainThs && mainThs.length > 0) {
+        const widths = Array.from(mainThs).map(th => (th as HTMLElement).getBoundingClientRect().width);
+        if (widths.some(w => w > 0)) {
+          setColWidths(prev => {
+            if (prev.length === widths.length && prev.every((w, i) => Math.abs(w - widths[i]) < 0.5)) {
+              return prev;
+            }
+            return widths;
+          });
+        }
+      }
+    }
   };
 
   // Reset page and selection when search, gender, or filters change
@@ -742,7 +763,7 @@ export default function DataKamarSantriSub({
     setActionMenuCoords(null);
   };
 
-  const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '', headerClass: string = '') => {
+  const renderSortHeader = (key: string, label: string, isSticky: boolean = false, extraClasses: string = '', headerClass: string = '', styleOverride?: React.CSSProperties) => {
     const isSorted = sortKey === key;
     return (
       <th 
@@ -754,6 +775,7 @@ export default function DataKamarSantriSub({
             setSortDirection('asc');
           }
         }}
+        style={styleOverride}
         className={`px-6 py-4 cursor-pointer transition-all select-none font-display text-xs font-bold uppercase tracking-wider relative hover:bg-slate-100 ${
           isSticky 
             ? `static sm:sticky z-20 ${extraClasses} ${headerClass}` 
@@ -791,63 +813,74 @@ export default function DataKamarSantriSub({
     );
   };
 
-  const renderTableHeadContents = (headerClass: string) => (
-    <tr>
-      {/* Sticky Checklist Column */}
-      {isSelectionMode && (
-        <th className={`px-3 py-4 text-center sticky left-0 z-30 border-r border-slate-100 w-12 min-w-[48px] ${headerClass}`}>
-          <div className="flex items-center justify-center">
-            <input
-              type="checkbox"
-              className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
-              checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
-              onChange={(e) => {
-                if (e.target.checked) {
-                  const newIds = [...selectedSantriIds];
-                  paginatedSantri.forEach(s => {
-                    if (!newIds.includes(s.id)) {
-                      newIds.push(s.id);
-                    }
-                  });
-                  setSelectedSantriIds(newIds);
-                } else {
-                  const paginatedIds = paginatedSantri.map(s => s.id);
-                  setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
-                }
-              }}
-            />
-          </div>
+  const renderTableHeadContents = (headerClass: string, isFloatingHeader: boolean = false) => {
+    let colIdx = 0;
+    const getStyle = () => {
+      const idx = colIdx++;
+      if (!isFloatingHeader || !colWidths || !colWidths[idx]) return undefined;
+      const w = colWidths[idx];
+      return { width: `${w}px`, minWidth: `${w}px`, maxWidth: `${w}px`, boxSizing: 'border-box' as const };
+    };
+
+    return (
+      <tr>
+        {/* Sticky Checklist Column */}
+        {isSelectionMode && (
+          <th style={getStyle()} className={`px-3 py-4 text-center sticky left-0 z-30 border-r border-slate-100 w-12 min-w-[48px] ${headerClass}`}>
+            <div className="flex items-center justify-center">
+              <input
+                type="checkbox"
+                className="h-4 w-4 rounded border-slate-300 text-purple-600 focus:ring-purple-500 cursor-pointer"
+                checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
+                onChange={(e) => {
+                  if (e.target.checked) {
+                    const newIds = [...selectedSantriIds];
+                    paginatedSantri.forEach(s => {
+                      if (!newIds.includes(s.id)) {
+                        newIds.push(s.id);
+                      }
+                    });
+                    setSelectedSantriIds(newIds);
+                  } else {
+                    const paginatedIds = paginatedSantri.map(s => s.id);
+                    setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
+                  }
+                }}
+              />
+            </div>
+          </th>
+        )}
+
+        {/* Sticky No Column */}
+        <th style={getStyle()} className={`px-4 py-4 static sm:sticky ${
+          isSelectionMode ? 'sm:left-12' : 'sm:left-0'
+        } z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-100 text-center w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider ${headerClass}`}>
+          No.
         </th>
-      )}
 
-      {/* Sticky No Column */}
-      <th className={`px-4 py-4 static sm:sticky ${
-        isSelectionMode ? 'sm:left-12' : 'sm:left-0'
-      } z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-100 text-center w-16 min-w-[64px] font-display text-xs font-bold uppercase tracking-wider ${headerClass}`}>
-        No.
-      </th>
+        {/* Sticky Nama Lengkap Column */}
+        {renderSortHeader(
+          'nama', 
+          'Nama Lengkap', 
+          true, 
+          isSelectionMode ? 'sm:left-28 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-100 min-w-[240px]' : 'sm:left-16 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-100 min-w-[240px]',
+          headerClass,
+          getStyle()
+        )}
 
-      {/* Sticky Nama Lengkap Column */}
-      {renderSortHeader(
-        'nama', 
-        'Nama Lengkap', 
-        true, 
-        isSelectionMode ? 'sm:left-28 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-100 min-w-[240px]' : 'sm:left-16 sm:shadow-[2px_0_5px_rgba(0,0,0,0.05)] border-r border-slate-100 min-w-[240px]',
-        headerClass
-      )}
+        {/* Rest of non-sticky columns */}
+        {renderSortHeader('nis', 'NIS', false, '', headerClass, getStyle())}
+        {renderSortHeader('alamat', 'Alamat', false, '', headerClass, getStyle())}
+        {renderSortHeader('kamar', 'Kamar', false, '', headerClass, getStyle())}
+        {renderSortHeader('nomorLemari', 'No. Lemari', false, '', headerClass, getStyle())}
 
-      {/* Rest of non-sticky columns */}
-      {renderSortHeader('nis', 'NIS', false, '', headerClass)}
-      {renderSortHeader('alamat', 'Alamat', false, '', headerClass)}
-      {renderSortHeader('kamar', 'Kamar', false, '', headerClass)}
-      {renderSortHeader('nomorLemari', 'No. Lemari', false, '', headerClass)}
-
-      {/* Sticky Aksi Column - On the right side */}
-      <th className={`px-2 py-4 text-center w-12 font-display text-xs font-bold uppercase tracking-wider sticky right-0 z-30 shadow-[-2px_0_5px_rgba(0,0,0,0.05)] border-l border-slate-100 ${headerClass}`}>
-        Aksi
-      </th>
-    </tr>
-  );
+        {/* Sticky Aksi Column - On the right side */}
+        <th style={getStyle()} className={`px-2 py-4 text-center w-12 font-display text-xs font-bold uppercase tracking-wider sticky right-0 z-30 shadow-[-2px_0_5px_rgba(0,0,0,0.05)] border-l border-slate-100 ${headerClass}`}>
+          Aksi
+        </th>
+      </tr>
+    );
+  };
 
   const renderScrollButtons = (isFloating: boolean) => {
     if (!canScrollRight) return null;
@@ -2125,9 +2158,16 @@ export default function DataKamarSantriSub({
             }}
             className="overflow-x-auto [&::-webkit-scrollbar]:hidden"
           >
-            <table className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]">
+            <table 
+              className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]"
+              style={{
+                width: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                minWidth: floatingTableWidth ? `${floatingTableWidth}px` : '100%',
+                tableLayout: colWidths.length > 0 ? 'fixed' : 'auto',
+              }}
+            >
               <thead className="bg-slate-50 text-xs font-semibold uppercase tracking-wider text-slate-400 bg-slate-50">
-                {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100')}
+                {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100', true)}
               </thead>
             </table>
           </div>
