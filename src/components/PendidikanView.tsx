@@ -860,19 +860,36 @@ export default function PendidikanView({
           activeLembagasOfStudent.push(targetLembaga);
         }
 
-        let activeInternalLembagaIds = activeLembagasOfStudent
-          .map(l => l.id);
-        if (targetClassName === 'Tanpa Kelas' && targetLembaga) {
-          activeInternalLembagaIds = activeInternalLembagaIds.filter(id => id !== targetLembaga.id);
-        } else if (targetLembaga && targetClassName !== 'Tanpa Kelas') {
-          if (!activeInternalLembagaIds.includes(targetLembaga.id)) {
-            activeInternalLembagaIds.push(targetLembaga.id);
+        const internalLembagasOfStudent = activeLembagasOfStudent.filter(l => {
+          const isFormal = l.jenis === 'Formal' || (!l.jenis && !['madin','diniyah','tpq','tahfidz','pondok','kitab','internal'].some(k => (l.nama || '').toLowerCase().includes(k)));
+          return !isFormal;
+        });
+
+        if (targetLembaga) {
+          const isTargetFormal = targetLembaga.jenis === 'Formal' || (!targetLembaga.jenis && !['madin','diniyah','tpq','tahfidz','pondok','kitab','internal'].some(k => (targetLembaga.nama || '').toLowerCase().includes(k)));
+          if (!isTargetFormal) {
+            if (targetClassName === 'Tanpa Kelas') {
+              const idx = internalLembagasOfStudent.findIndex(l => l.id === targetLembaga.id);
+              if (idx !== -1) internalLembagasOfStudent.splice(idx, 1);
+            } else if (!internalLembagasOfStudent.some(l => l.id === targetLembaga.id)) {
+              internalLembagasOfStudent.push(targetLembaga);
+            }
           }
         }
 
-        const newInternal = activeInternalLembagaIds.length > 0 
-          ? Array.from(new Set(activeInternalLembagaIds)).join(',') 
-          : '';
+        const internalEntries = internalLembagasOfStudent.map(l => {
+          let cName = targetLembaga && l.id === targetLembaga.id ? targetClassName : null;
+          if (!cName) {
+            const matchedCls = kelasList.find(k => String(k.lembagaId) === String(l.id) && currentClasses.some(c => c.trim().toLowerCase() === k.nama.trim().toLowerCase()));
+            if (matchedCls) cName = matchedCls.nama;
+          }
+          if (cName && cName !== 'Tanpa Kelas' && cName !== 'Calon Peserta Didik' && cName !== 'Calon Pelajar') {
+            return `${l.nama} - ${cName}`;
+          }
+          return `${l.nama} - Calon Peserta Didik`;
+        });
+
+        const newInternal = Array.from(new Set(internalEntries)).join(', ');
 
         const isBatchFormal = targetLembaga ? (
           targetLembaga.jenis === 'Formal' || 

@@ -1397,11 +1397,24 @@ export default function LembagaKelasSub({
       currentClassStudentIds = selectedLembaga ? getStudentsInClass(selectedKelas, selectedLembaga).map(s => s.id) : [];
     }
 
-    return santriList.filter(s => 
-      isGenderMatch(s.gender, selectedGender) && 
-      isAktif(s) && 
-      !currentClassStudentIds.includes(s.id)
-    );
+    const isFormalLembaga = selectedLembaga ? getLembagaJenis(selectedLembaga) === 'Formal' : activeTab === 'Formal';
+    const isCalonClass = isDefaultClass(selectedKelas);
+
+    return santriList.filter(s => {
+      if (!isGenderMatch(s.gender, selectedGender)) return false;
+      if (!isAktif(s)) return false;
+      if (currentClassStudentIds.includes(s.id)) return false;
+
+      // Khusus pada modal tambah anggota yang dibuka di kelas lembaga formal (kecuali calon peserta didik):
+      // buat daftar yang ditampilkan hanya yang EMIS sudah terdaftar.
+      if (activeTab !== 'Rombel' && isFormalLembaga && !isCalonClass) {
+        if (!isEmisTerdaftar(s.statusEmis)) {
+          return false;
+        }
+      }
+
+      return true;
+    });
   };
 
   // Helper: Get formal institution and class section for a student
@@ -3816,9 +3829,16 @@ export default function LembagaKelasSub({
                     <UserPlus className="h-4 w-4" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-bold text-slate-800">
-                      {activeTab === 'Rombel' ? 'Tambah Anggota Rombel' : 'Tambah Anggota Kelas'}
-                    </h3>
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-800">
+                        {activeTab === 'Rombel' ? 'Tambah Anggota Rombel' : 'Tambah Anggota Kelas'}
+                      </h3>
+                      {activeTab !== 'Rombel' && selectedLembaga && getLembagaJenis(selectedLembaga) === 'Formal' && !isDefaultClass(selectedKelas) && (
+                        <span className="px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200/80 text-[10px] font-bold">
+                          Khusus EMIS Terdaftar
+                        </span>
+                      )}
+                    </div>
                     <p className="text-xs text-slate-500 font-medium">{selectedLembaga.nama} &bull; <span className="text-emerald-700 font-semibold">{selectedKelas.nama}</span></p>
                   </div>
                 </div>
@@ -3922,7 +3942,13 @@ export default function LembagaKelasSub({
                         return (
                           <div className="h-full flex flex-col items-center justify-center py-12 text-center text-slate-400 text-xs">
                             <User className="h-8 w-8 text-slate-300 mb-2 stroke-[1.5]" />
-                            <p className="font-medium">{addMemberSearch ? 'Tidak ada santri yang cocok' : 'Tidak ada santri tersedia'}</p>
+                            <p className="font-medium">
+                              {addMemberSearch 
+                                ? 'Tidak ada santri yang cocok' 
+                                : (activeTab !== 'Rombel' && selectedLembaga && getLembagaJenis(selectedLembaga) === 'Formal' && !isDefaultClass(selectedKelas))
+                                  ? 'Tidak ada santri dengan status EMIS Terdaftar yang tersedia'
+                                  : 'Tidak ada santri tersedia'}
+                            </p>
                           </div>
                         );
                       }

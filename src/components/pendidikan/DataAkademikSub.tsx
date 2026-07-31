@@ -37,7 +37,7 @@ interface DataAkademikSubProps {
   groupsList: KelompokRombel[];
   assignmentsList: RombelAssignment[];
   onUpdateSantri: (updatedSantri: Santri) => void;
-  onUpdateSantriClassBatch?: (santriIds: string[], targetClassName: string) => void;
+  onUpdateSantriClassBatch?: (santriIds: string[], targetClassName: string, lembagaId?: string) => void;
   onUpdateRombelBatch?: (santriIds: string[], categoryId: string, targetGroupId: string | null) => void;
   onAddAssignment?: (newAss: RombelAssignment) => void;
   onRemoveAssignment?: (santriId: string, kelompokId: string) => void;
@@ -139,6 +139,15 @@ export default function DataAkademikSub({
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
   const [showPageJumpDropdown, setShowPageJumpDropdown] = useState(false);
+
+  // Direct Inline Cell Dropdown & NIS Editing States
+  const [activeCellDropdown, setActiveCellDropdown] = useState<{
+    santriId: string;
+    columnKey: string;
+  } | null>(null);
+  const [pendingCellValue, setPendingCellValue] = useState<string | null>(null);
+  const [editingNisId, setEditingNisId] = useState<string | null>(null);
+  const [editingNisVal, setEditingNisVal] = useState<string>('');
 
   // Row Action Dropdown State
   const [openDropdownRowId, setOpenDropdownRowId] = useState<string | null>(null);
@@ -394,7 +403,10 @@ export default function DataAkademikSub({
           const dashParts = pf.split('-');
           if (dashParts.length > 1) {
             const clsPart = dashParts.slice(1).join('-').trim();
-            if (clsPart) return clsPart.toUpperCase();
+            if (clsPart && !/^\d{6,}$/.test(clsPart)) {
+              const matched = kelasList.find(k => String(k.lembagaId) === String(l.id) && k.nama.trim().toLowerCase() === clsPart.toLowerCase());
+              return matched ? matched.nama : clsPart.toUpperCase();
+            }
           }
           return 'Calon Peserta Didik';
         }
@@ -415,7 +427,10 @@ export default function DataAkademikSub({
           const dashParts = pi.split('-');
           if (dashParts.length > 1) {
             const clsPart = dashParts.slice(1).join('-').trim();
-            if (clsPart) return clsPart.toUpperCase();
+            if (clsPart && !/^\d{6,}$/.test(clsPart)) {
+              const matched = kelasList.find(k => String(k.lembagaId) === String(l.id) && k.nama.trim().toLowerCase() === clsPart.toLowerCase());
+              return matched ? matched.nama : clsPart.toUpperCase();
+            }
           }
           return 'Calon Peserta Didik';
         }
@@ -430,7 +445,7 @@ export default function DataAkademikSub({
         return lemId === targetId;
       });
       for (const k of classesOfL) {
-        if (k.nama && sClasses.includes(norm(k.nama))) {
+        if (k.nama && sClasses.includes(norm(k.nama)) && !/^\d{6,}$/.test(k.nama)) {
           return k.nama;
         }
       }
@@ -774,6 +789,139 @@ export default function DataAkademikSub({
     setSelectedSantriIds([]);
     setIsSelectionMode(false);
     setSantriToEdit([]);
+  };
+
+  // Inline edit handler for class in Lembaga
+  const handleInlineClassChange = (student: Santri, lembaga: Lembaga, newClassName: string) => {
+    setActiveCellDropdown(null);
+    setPendingCellValue(null);
+    
+    if (onUpdateSantriClassBatch) {
+      onUpdateSantriClassBatch([student.id], newClassName, lembaga.id);
+    } else {
+      const isFormal = getLembagaJenis(lembaga) === 'Formal';
+      let currentClasses = student.kelas ? student.kelas.split(',').map(x => x.trim()).filter(Boolean) : [];
+      currentClasses = currentClasses.filter(c => c.toLowerCase() !== 'tanpa kelas');
+      
+      if (isFormal) {
+        // FORMAL RULE: Max 1 formal institution placement. Selecting a class in a new formal institution clears the previous formal placement.
+        const formalLembagaIds = lembagasList.filter(l => getLembagaJenis(l) === 'Formal').map(l => String(l.id));
+        const formalClassNamesLower = kelasList
+          .filter(k => formalLembagaIds.includes(String(k.lembagaId)))
+          .map(k => k.nama.trim().toLowerCase());
+
+        // Filter out all formal class names and calon labels
+        currentClasses = currentClasses.filter(cls => {
+          const lowerCls = cls.trim().toLowerCase();
+          if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik') return false;
+          if (formalClassNamesLower.includes(lowerCls)) return false;
+          return true;
+        });
+
+        let newFormalStr = student.pendidikanFormal || '';
+
+        if (newClassName === 'Tanpa Kelas' || newClassName === '-' || !newClassName) {
+          newFormalStr = '';
+        } else {
+          newFormalStr = (newClassName !== 'Calon Peserta Didik' && newClassName !== 'Calon Pelajar')
+            ? `${lembaga.nama} - ${newClassName}`
+            : `${lembaga.nama} - Calon Peserta Didik`;
+
+          if (newClassName !== 'Calon Peserta Didik' && newClassName !== 'Calon Pelajar') {
+            if (!currentClasses.some(c => c.toLowerCase() === newClassName.toLowerCase())) {
+              currentClasses.push(newClassName.trim());
+            }
+          }
+        }
+
+        const finalKelasString = currentClasses.join(', ') || 'Tanpa Kelas';
+
+        onUpdateSantri({
+          ...student,
+          kelas: finalKelasString,
+          pendidikanFormal: newFormalStr,
+          statusEmis: (newClassName !== 'Tanpa Kelas' && newClassName !== '-' && newClassName) ? 'Terdaftar' : student.statusEmis
+        });
+
+      } else {
+        // INTERNAL RULE: Independent per internal institution
+        currentClasses = currentClasses.filter(cls => {
+          const lowerCls = cls.trim().toLowerCase();
+          if (lowerCls === 'calon pelajar' || lowerCls === 'calon peserta didik') return false;
+          const c = kelasList.find(x => x.nama.trim().toLowerCase() === lowerCls && String(x.lembagaId) === String(lembaga.id));
+          if (c && String(c.lembagaId) === String(lembaga.id)) return false;
+          return true;
+        });
+
+        if (newClassName !== 'Tanpa Kelas' && newClassName !== '-' && newClassName) {
+          if (newClassName !== 'Calon Peserta Didik' && newClassName !== 'Calon Pelajar') {
+            if (!currentClasses.some(c => c.toLowerCase() === newClassName.toLowerCase())) {
+              currentClasses.push(newClassName.trim());
+            }
+          }
+        }
+
+        const finalKelasString = currentClasses.join(', ') || 'Tanpa Kelas';
+
+        let internalArr = (student.pendidikanInternal || '').split(',').map(x => x.trim()).filter(Boolean);
+        internalArr = internalArr.filter(entry => {
+          const lowerEntry = entry.toLowerCase();
+          const targetId = String(lembaga.id).toLowerCase();
+          const targetNama = (lembaga.nama || '').toLowerCase();
+          return !lowerEntry.includes(targetId) && !lowerEntry.includes(targetNama);
+        });
+
+        if (newClassName !== 'Tanpa Kelas' && newClassName !== '-' && newClassName) {
+          internalArr.push(`${lembaga.nama} - ${newClassName}`);
+        }
+
+        onUpdateSantri({
+          ...student,
+          kelas: finalKelasString,
+          pendidikanInternal: internalArr.join(', ')
+        });
+      }
+    }
+
+    setToast({
+      message: `Penempatan ${student.nama} di ${lembaga.nama} berhasil diperbarui.`,
+      type: 'success'
+    });
+  };
+
+  // Inline edit handler for Rombel Group
+  const handleInlineRombelChange = (student: Santri, categoryId: string, targetGroupId: string | null) => {
+    setActiveCellDropdown(null);
+    setPendingCellValue(null);
+
+    if (onUpdateRombelBatch) {
+      onUpdateRombelBatch([student.id], categoryId, targetGroupId);
+    } else {
+      const existingAss = assignmentsList.find(a => a.santriId === student.id && a.kategoriId === categoryId);
+      if (targetGroupId === null || targetGroupId === 'none') {
+        if (existingAss && onRemoveAssignment) {
+          onRemoveAssignment(student.id, existingAss.kelompokId);
+        }
+      } else {
+        if (existingAss && onRemoveAssignment) {
+          onRemoveAssignment(student.id, existingAss.kelompokId);
+        }
+        if (onAddAssignment) {
+          onAddAssignment({
+            id: `ass-${Date.now()}-${Math.random()}`,
+            santriId: student.id,
+            kelompokId: targetGroupId,
+            kategoriId: categoryId
+          });
+        }
+      }
+    }
+
+    const catName = categoriesList.find(c => c.id === categoryId)?.nama || 'Rombel';
+    setToast({
+      message: `Kelompok ${catName} untuk ${student.nama} berhasil diperbarui.`,
+      type: 'success'
+    });
   };
 
   // Excel Export Handler (XML Format compatible with Excel)
@@ -1197,16 +1345,11 @@ export default function DataAkademikSub({
         {renderSortHeader('nama', 'Nama Lengkap', true, isSelectionMode ? 'sm:left-[90px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]' : 'sm:left-[42px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]', getStyle())}
 
         {renderSortHeader('nis', 'NIS', false, '', getStyle())}
-        {renderSortHeader('alamat', 'Alamat', false, '', getStyle())}
         {academicType !== 'rombel' ? (
           activeLembagas.map(lem => renderSortHeader('lembaga_' + lem.id, lem.nama, false, '', getStyle()))
         ) : (
           categoriesList.map(cat => renderSortHeader('rombel_' + cat.id, cat.nama, false, '', getStyle()))
         )}
-
-        <th style={getStyle()} className={`px-2 py-4 text-center w-12 font-display text-xs font-bold uppercase tracking-wider sticky right-0 z-40 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] border-l border-slate-100 ${headerClass}`}>
-          Aksi
-        </th>
       </tr>
     );
   };
@@ -2033,7 +2176,7 @@ export default function DataAkademikSub({
                         {startIndex + idx + 1}
                       </td>
 
-                      {/* Sticky Nama Lengkap Cell */}
+                      {/* Sticky Nama Lengkap Cell with Alamat underneath */}
                       <td className={`px-6 py-4 static sm:sticky ${
                         isSelectionMode ? 'sm:left-[90px]' : 'sm:left-[42px]'
                       } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-50 min-w-[240px] ${
@@ -2042,8 +2185,12 @@ export default function DataAkademikSub({
                           : 'bg-white group-hover:bg-slate-50'
                       }`}>
                         <div className="flex items-center gap-3">
-                          <div className="relative shrink-0 select-none">
-                            {renderSantriAvatar(s, "h-9 w-9 shrink-0 rounded-full border border-slate-100 shadow-xs")}
+                          <div 
+                            className="relative shrink-0 select-none cursor-pointer" 
+                            onClick={() => setSelectedSantri(s)}
+                            title="Klik untuk lihat biodata lengkap"
+                          >
+                            {renderSantriAvatar(s, "h-9 w-9 shrink-0 rounded-full border border-slate-100 shadow-xs hover:ring-2 hover:ring-indigo-300 transition-all")}
                             {(() => {
                               const age = calculateRealtimeAge(s.tanggalLahir);
                               return age !== null ? (
@@ -2053,175 +2200,430 @@ export default function DataAkademikSub({
                               ) : null;
                             })()}
                           </div>
-                          <p className="font-display text-sm font-bold text-slate-900 leading-tight">
-                            {s.nama}
-                          </p>
+                          <div className="flex flex-col min-w-0">
+                            <p 
+                              onClick={() => setSelectedSantri(s)}
+                              className="font-display text-sm font-bold text-slate-900 leading-tight hover:text-indigo-600 transition-colors cursor-pointer truncate"
+                              title="Klik untuk lihat biodata lengkap"
+                            >
+                              {s.nama}
+                            </p>
+                            {getFormattedAlamat(s) ? (
+                              <p 
+                                className="text-[11px] text-slate-500 font-medium leading-normal mt-0.5 max-w-[260px] truncate"
+                                title={getFormattedAlamat(s)}
+                              >
+                                {getFormattedAlamat(s)}
+                              </p>
+                            ) : (
+                              <p className="text-[11px] text-slate-400 italic leading-normal mt-0.5">
+                                Alamat belum diisi
+                              </p>
+                            )}
+                          </div>
                         </div>
                       </td>
 
                       {/* NIS Cell */}
                       <td className="px-6 py-4 whitespace-nowrap font-mono text-xs font-semibold text-slate-700">
-                        {s.nis || '-'}
+                        {canWriteCurrent ? (
+                          editingNisId === s.id ? (
+                            <div className="flex items-center gap-1" onClick={(e) => e.stopPropagation()}>
+                              <input
+                                type="text"
+                                value={editingNisVal}
+                                onChange={(e) => setEditingNisVal(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') {
+                                    onUpdateSantri({ ...s, nis: editingNisVal });
+                                    setEditingNisId(null);
+                                    setToast({ message: `NIS ${s.nama} berhasil diperbarui.`, type: 'success' });
+                                  } else if (e.key === 'Escape') {
+                                    setEditingNisId(null);
+                                  }
+                                }}
+                                className="w-28 px-2 py-1 text-xs font-mono border border-indigo-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
+                                autoFocus
+                              />
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  onUpdateSantri({ ...s, nis: editingNisVal });
+                                  setEditingNisId(null);
+                                  setToast({ message: `NIS ${s.nama} berhasil diperbarui.`, type: 'success' });
+                                }}
+                                className="p-1 rounded bg-indigo-50 text-indigo-600 hover:bg-indigo-100 cursor-pointer"
+                                title="Simpan NIS"
+                              >
+                                <Check className="h-3.5 w-3.5" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setEditingNisId(null)}
+                                className="p-1 rounded bg-slate-50 text-slate-400 hover:bg-slate-100 cursor-pointer"
+                                title="Batal"
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </button>
+                            </div>
+                          ) : (
+                            <span
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setEditingNisId(s.id);
+                                setEditingNisVal(s.nis || '');
+                              }}
+                              className="cursor-pointer hover:text-indigo-600 hover:underline transition-colors group/nis flex items-center gap-1"
+                              title="Klik untuk edit NIS"
+                            >
+                              <span>{s.nis || '-'}</span>
+                              <Edit2 className="h-3 w-3 opacity-0 group-hover/nis:opacity-100 text-indigo-500 transition-opacity" />
+                            </span>
+                          )
+                        ) : (
+                          s.nis || '-'
+                        )}
                       </td>
 
-                      {/* Combined Alamat Cell */}
-                      <td className="px-6 py-4 text-xs text-slate-600 max-w-xs truncate" title={getFormattedAlamat(s)}>
-                        {getFormattedAlamat(s)}
-                      </td>
-
-                      {/* Academic Assignment Details Cells */}
+                      {/* Academic Assignment Details Cells with Direct Inline Edit */}
                       {academicType !== 'rombel' ? (
                         activeLembagas.map(lem => {
                           const clsName = getStudentClassInLembaga(s, lem);
+                          const initialClassVal = clsName || 'Tanpa Kelas';
+                          const cellKey = `lembaga_${lem.id}`;
+                          const isOpen = activeCellDropdown?.santriId === s.id && activeCellDropdown?.columnKey === cellKey;
+                          const availableClasses = kelasList.filter(c => String(c.lembagaId) === String(lem.id));
+                          const cleanAvailableClasses = availableClasses.filter(c => {
+                            const lower = c.nama.trim().toLowerCase();
+                            return lower !== 'calon peserta didik' && lower !== 'calon pelajar' && lower !== 'tanpa kelas';
+                          });
+                          const isClassChanged = isOpen && pendingCellValue !== null && pendingCellValue !== initialClassVal;
+
                           return (
-                            <td key={lem.id} className="px-6 py-4 text-xs font-semibold whitespace-nowrap">
-                              {clsName ? (
-                                <span className={`inline-flex items-center rounded-xl px-2.5 py-1 font-extrabold border shadow-xs ${
-                                  clsName === 'Calon Peserta Didik'
-                                    ? 'bg-amber-50 text-amber-800 border-amber-200'
-                                    : 'bg-indigo-50 text-indigo-800 border-indigo-100'
-                                }`}>
-                                  {clsName}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 font-semibold">-</span>
-                              )}
+                            <td key={lem.id} className="px-6 py-4 text-xs font-semibold whitespace-nowrap overflow-visible relative">
+                              <div className="relative inline-block text-left">
+                                {canWriteCurrent ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isOpen) {
+                                        setActiveCellDropdown(null);
+                                      } else {
+                                        setActiveCellDropdown({ santriId: s.id, columnKey: cellKey });
+                                        setPendingCellValue(initialClassVal);
+                                      }
+                                    }}
+                                    className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold border transition-all cursor-pointer shadow-2xs hover:shadow-xs ${
+                                      clsName === 'Calon Peserta Didik'
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                                        : clsName
+                                          ? 'bg-indigo-50 text-indigo-800 border-indigo-200 hover:bg-indigo-100'
+                                          : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-700'
+                                    }`}
+                                    title="Klik untuk ubah penempatan kelas"
+                                  >
+                                    <span>{clsName || '-'}</span>
+                                    <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
+                                  </button>
+                                ) : (
+                                  <span className={`inline-flex items-center rounded-xl px-2.5 py-1 font-extrabold border shadow-xs ${
+                                    clsName === 'Calon Peserta Didik'
+                                      ? 'bg-amber-50 text-amber-800 border-amber-200'
+                                      : clsName
+                                        ? 'bg-indigo-50 text-indigo-800 border-indigo-100'
+                                        : 'bg-slate-50 text-slate-400 border-slate-200/60'
+                                  }`}>
+                                    {clsName || '-'}
+                                  </span>
+                                )}
+
+                                <AnimatePresence>
+                                  {isOpen && (
+                                    <>
+                                      <div 
+                                        className="fixed inset-0 z-40 bg-transparent" 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveCellDropdown(null);
+                                        }} 
+                                      />
+                                      <motion.div
+                                        initial={{ opacity: 0, scale: 0.95, y: (idx >= paginatedSantri.length - 2 && idx >= 2) ? 4 : -4 }}
+                                        animate={{ opacity: 1, scale: 1, y: 0 }}
+                                        exit={{ opacity: 0, scale: 0.95 }}
+                                        className={`absolute left-0 ${
+                                          (idx >= paginatedSantri.length - 2 && idx >= 2) ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                                        } w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl z-50 text-left font-sans text-xs`}
+                                        onClick={(e) => e.stopPropagation()}
+                                      >
+                                        {/* Confirmation Action Header: Only visible when value has changed */}
+                                        {isClassChanged && (
+                                          <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-100 bg-amber-50/80 -mx-2 -mt-2 p-2 rounded-t-2xl">
+                                            <span className="text-[11px] font-bold text-amber-800">
+                                              Simpan perubahan?
+                                            </span>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleInlineClassChange(s, lem, pendingCellValue || 'Tanpa Kelas');
+                                                }}
+                                                className="p-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer transition-all shadow-2xs active:scale-95 flex items-center gap-1 px-2 py-0.5 text-xs font-bold"
+                                                title="Simpan Perubahan"
+                                              >
+                                                <Check className="h-3.5 w-3.5 stroke-[3]" />
+                                                <span>Ya</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setActiveCellDropdown(null);
+                                                }}
+                                                className="p-1 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 cursor-pointer transition-all shadow-2xs active:scale-95 flex items-center gap-1 px-1.5 py-0.5 text-xs font-bold"
+                                                title="Batal"
+                                              >
+                                                <X className="h-3.5 w-3.5 stroke-[3]" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
+
+                                        <div className="max-h-52 overflow-y-auto space-y-0.5 pr-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setPendingCellValue('Tanpa Kelas');
+                                            }}
+                                            onDoubleClick={(e) => {
+                                              e.stopPropagation();
+                                              handleInlineClassChange(s, lem, 'Tanpa Kelas');
+                                            }}
+                                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
+                                              (pendingCellValue === 'Tanpa Kelas' || !pendingCellValue || pendingCellValue === '-')
+                                                ? 'bg-rose-50 text-rose-700 font-bold'
+                                                : 'text-slate-500 hover:bg-rose-50/60 hover:text-rose-600'
+                                            }`}
+                                          >
+                                            <span>- (Bukan Peserta Didik)</span>
+                                            {(pendingCellValue === 'Tanpa Kelas' || !pendingCellValue || pendingCellValue === '-') && (
+                                              <Check className="h-3.5 w-3.5 text-rose-600 shrink-0 stroke-[2.5]" />
+                                            )}
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setPendingCellValue('Calon Peserta Didik');
+                                            }}
+                                            onDoubleClick={(e) => {
+                                              e.stopPropagation();
+                                              handleInlineClassChange(s, lem, 'Calon Peserta Didik');
+                                            }}
+                                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer text-left ${
+                                              pendingCellValue === 'Calon Peserta Didik' ? 'bg-indigo-50 font-bold text-indigo-900' : ''
+                                            }`}
+                                          >
+                                            <span>Calon Peserta Didik</span>
+                                            {pendingCellValue === 'Calon Peserta Didik' && (
+                                              <Check className="h-3.5 w-3.5 text-indigo-800 shrink-0 stroke-[2.5]" />
+                                            )}
+                                          </button>
+
+                                          {cleanAvailableClasses.map(c => {
+                                            const isSelected = pendingCellValue === c.nama;
+                                            return (
+                                              <button
+                                                key={c.id}
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setPendingCellValue(c.nama);
+                                                }}
+                                                onDoubleClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleInlineClassChange(s, lem, c.nama);
+                                                }}
+                                                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer text-left ${
+                                                  isSelected ? 'bg-indigo-50 font-bold text-indigo-900' : ''
+                                                }`}
+                                              >
+                                                <span>{c.nama}</span>
+                                                {isSelected && (
+                                                  <Check className="h-3.5 w-3.5 text-indigo-800 shrink-0 stroke-[2.5]" />
+                                                )}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
+                                      </motion.div>
+                                    </>
+                                  )}
+                                </AnimatePresence>
+                              </div>
                             </td>
                           );
                         })
                       ) : (
                         categoriesList.map(cat => {
-                          const asg = assignmentsList.find(a => a.santriId === s.id && a.kategoriId === cat.id);
-                          const grp = asg ? groupsList.find(g => g.id === asg.kelompokId) : null;
-                          return (
-                            <td key={cat.id} className="px-6 py-4 text-xs font-semibold whitespace-nowrap">
-                              {grp ? (
-                                <span className="inline-flex items-center rounded-xl bg-purple-50 text-purple-800 px-2.5 py-1 font-extrabold border border-purple-100 shadow-xs">
-                                  {grp.nama}
-                                </span>
-                              ) : (
-                                <span className="text-slate-400 font-semibold">-</span>
-                              )}
-                            </td>
-                          );
-                        })
-                      )}
+                          const asg = assignmentsList.find(a => String(a.santriId) === String(s.id) && String(a.kategoriId) === String(cat.id));
+                          const grp = asg ? groupsList.find(g => String(g.id) === String(asg.kelompokId)) : null;
+                          const initialGroupVal = grp ? grp.id : 'none';
+                          const cellKey = `rombel_${cat.id}`;
+                          const isOpen = activeCellDropdown?.santriId === s.id && activeCellDropdown?.columnKey === cellKey;
+                          const availableGroups = groupsList.filter(g => String(g.kategoriId) === String(cat.id));
+                          const isRombelChanged = isOpen && pendingCellValue !== null && pendingCellValue !== initialGroupVal;
 
-                      {/* Sticky Aksi Column with 3-Dots Dropdown Menu */}
-                      <td className={`px-2 py-4 text-center whitespace-nowrap sticky right-0 bg-white group-hover:bg-slate-50 border-l border-slate-100 shadow-[-2px_0_5px_rgba(0,0,0,0.01)] overflow-visible w-12 min-w-[48px] ${
-                        openDropdownRowId === s.id ? 'z-50' : 'z-20'
-                      }`}>
-                        <div className="flex items-center justify-center overflow-visible" onClick={(e) => e.stopPropagation()}>
-                          
-                          <div className="relative">
-                            {canWriteCurrent ? (
-                              <>
-                                <button
-                                  type="button"
-                                  onClick={() => setOpenDropdownRowId(openDropdownRowId === s.id ? null : s.id)}
-                                  className={`inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-50 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-slate-100 cursor-pointer shadow-2xs active:scale-90 ${
-                                    openDropdownRowId === s.id ? 'bg-indigo-50 text-indigo-600 border-indigo-100' : ''
-                                  }`}
-                                  title="Aksi Lainnya"
-                                >
-                                  <MoreVertical className="h-4 w-4" />
-                                </button>
+                          return (
+                            <td key={cat.id} className="px-6 py-4 text-xs font-semibold whitespace-nowrap overflow-visible relative">
+                              <div className="relative inline-block text-left">
+                                {canWriteCurrent ? (
+                                  <button
+                                    type="button"
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (isOpen) {
+                                        setActiveCellDropdown(null);
+                                      } else {
+                                        setActiveCellDropdown({ santriId: s.id, columnKey: cellKey });
+                                        setPendingCellValue(initialGroupVal);
+                                      }
+                                    }}
+                                    className={`inline-flex items-center gap-1.5 rounded-xl px-2.5 py-1 text-xs font-bold border transition-all cursor-pointer shadow-2xs hover:shadow-xs ${
+                                      grp
+                                        ? 'bg-purple-50 text-purple-800 border-purple-200 hover:bg-purple-100'
+                                        : 'bg-slate-50 text-slate-500 border-slate-200 hover:bg-slate-100 hover:text-slate-700'
+                                    }`}
+                                    title="Klik untuk ubah kelompok rombel"
+                                  >
+                                    <span>{grp ? grp.nama : '-'}</span>
+                                    <ChevronDown className="h-3 w-3 opacity-60 shrink-0" />
+                                  </button>
+                                ) : (
+                                  <span className={`inline-flex items-center rounded-xl px-2.5 py-1 font-extrabold border shadow-xs ${
+                                    grp
+                                      ? 'bg-purple-50 text-purple-800 border-purple-100'
+                                      : 'bg-slate-50 text-slate-400 border-slate-200/60'
+                                  }`}>
+                                    {grp ? grp.nama : '-'}
+                                  </span>
+                                )}
 
                                 <AnimatePresence>
-                                  {openDropdownRowId === s.id && (
+                                  {isOpen && (
                                     <>
-                                      {/* Overlay to catch clicks and close the menu */}
                                       <div 
                                         className="fixed inset-0 z-40 bg-transparent" 
-                                        onClick={() => setOpenDropdownRowId(null)} 
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setActiveCellDropdown(null);
+                                        }} 
                                       />
                                       <motion.div
-                                        initial={{ opacity: 0, scale: 0.95, y: ((idx >= paginatedSantri.length - 2 && idx >= 2) || (idx === paginatedSantri.length - 1 && idx > 0)) ? 4 : -4 }}
+                                        initial={{ opacity: 0, scale: 0.95, y: (idx >= paginatedSantri.length - 2 && idx >= 2) ? 4 : -4 }}
                                         animate={{ opacity: 1, scale: 1, y: 0 }}
                                         exit={{ opacity: 0, scale: 0.95 }}
-                                        className={`absolute right-0 ${
-                                          ((idx >= paginatedSantri.length - 2 && idx >= 2) || (idx === paginatedSantri.length - 1 && idx > 0))
-                                            ? 'bottom-full mb-1.5 origin-bottom-right'
-                                            : 'top-full mt-1.5 origin-top-right'
-                                        } w-44 rounded-xl border border-slate-100 bg-white p-1 shadow-xl z-50 text-left font-sans`}
+                                        className={`absolute left-0 ${
+                                          (idx >= paginatedSantri.length - 2 && idx >= 2) ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+                                        } w-52 rounded-2xl border border-slate-200 bg-white p-2 shadow-2xl z-50 text-left font-sans text-xs`}
+                                        onClick={(e) => e.stopPropagation()}
                                       >
-                                        {/* Biodata option */}
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setSelectedSantri(s);
-                                            setOpenDropdownRowId(null);
-                                          }}
-                                          className="flex w-full items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer border-none text-left"
-                                        >
-                                          <Eye className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                          <span>Biodata</span>
-                                        </button>
+                                        {/* Confirmation Action Header: Only visible when value has changed */}
+                                        {isRombelChanged && (
+                                          <div className="flex items-center justify-between pb-2 mb-2 border-b border-amber-100 bg-amber-50/80 -mx-2 -mt-2 p-2 rounded-t-2xl">
+                                            <span className="text-[11px] font-bold text-amber-800">
+                                              Simpan perubahan?
+                                            </span>
+                                            <div className="flex items-center gap-1 shrink-0">
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleInlineRombelChange(s, cat.id, pendingCellValue === 'none' ? null : pendingCellValue);
+                                                }}
+                                                className="p-1 rounded-md bg-emerald-600 text-white hover:bg-emerald-700 cursor-pointer transition-all shadow-2xs active:scale-95 flex items-center gap-1 px-2 py-0.5 text-xs font-bold"
+                                                title="Simpan Perubahan"
+                                              >
+                                                <Check className="h-3.5 w-3.5 stroke-[3]" />
+                                                <span>Ya</span>
+                                              </button>
+                                              <button
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setActiveCellDropdown(null);
+                                                }}
+                                                className="p-1 rounded-md bg-slate-200 text-slate-700 hover:bg-slate-300 cursor-pointer transition-all shadow-2xs active:scale-95 flex items-center gap-1 px-1.5 py-0.5 text-xs font-bold"
+                                                title="Batal"
+                                              >
+                                                <X className="h-3.5 w-3.5 stroke-[3]" />
+                                              </button>
+                                            </div>
+                                          </div>
+                                        )}
 
-                                        {/* Pindah option */}
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setTransferStudent(s);
-                                            setOpenDropdownRowId(null);
-                                          }}
-                                          className="flex w-full items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer border-none text-left"
-                                        >
-                                          <ArrowLeftRight className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                          <span>Pindah</span>
-                                        </button>
+                                        <div className="max-h-52 overflow-y-auto space-y-0.5 pr-0.5">
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setPendingCellValue('none');
+                                            }}
+                                            onDoubleClick={(e) => {
+                                              e.stopPropagation();
+                                              handleInlineRombelChange(s, cat.id, null);
+                                            }}
+                                            className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium transition-colors cursor-pointer text-left ${
+                                              (!pendingCellValue || pendingCellValue === 'none')
+                                                ? 'bg-rose-50 text-rose-700 font-bold'
+                                                : 'text-slate-500 hover:bg-rose-50/60 hover:text-rose-600'
+                                            }`}
+                                          >
+                                            <span>- (Bukan Anggota)</span>
+                                            {(!pendingCellValue || pendingCellValue === 'none') && (
+                                              <Check className="h-3.5 w-3.5 text-rose-600 shrink-0 stroke-[2.5]" />
+                                            )}
+                                          </button>
 
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            setIsSelectionMode(true);
-                                            if (isSelected) {
-                                              setSelectedSantriIds(selectedSantriIds.filter(id => id !== s.id));
-                                            } else {
-                                              setSelectedSantriIds([...selectedSantriIds, s.id]);
-                                            }
-                                            setOpenDropdownRowId(null);
-                                          }}
-                                          className={`flex w-full items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold transition-colors cursor-pointer border-none text-left ${
-                                            isSelected 
-                                              ? 'bg-indigo-50 text-indigo-800' 
-                                              : 'text-slate-600 hover:bg-slate-50'
-                                          }`}
-                                        >
-                                          <Check className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                          <span>{isSelected ? 'Batal Pilih' : 'Pilih Santri'}</span>
-                                        </button>
-
-                                        <button
-                                          type="button"
-                                          onClick={() => {
-                                            handleOpenEditModal([s]);
-                                            setOpenDropdownRowId(null);
-                                          }}
-                                          className="flex w-full items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors cursor-pointer border-none text-left"
-                                        >
-                                          <Edit2 className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                                          <span>Ubah Penempatan</span>
-                                        </button>
+                                          {availableGroups.map(g => {
+                                            const isSelected = pendingCellValue === g.id;
+                                            return (
+                                              <button
+                                                key={g.id}
+                                                type="button"
+                                                onClick={(e) => {
+                                                  e.stopPropagation();
+                                                  setPendingCellValue(g.id);
+                                                }}
+                                                onDoubleClick={(e) => {
+                                                  e.stopPropagation();
+                                                  handleInlineRombelChange(s, cat.id, g.id);
+                                                }}
+                                                className={`w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer text-left ${
+                                                  isSelected ? 'bg-purple-50 font-bold text-purple-900' : ''
+                                                }`}
+                                              >
+                                                <span>{g.nama}</span>
+                                                {isSelected && (
+                                                  <Check className="h-3.5 w-3.5 text-purple-800 shrink-0 stroke-[2.5]" />
+                                                )}
+                                              </button>
+                                            );
+                                          })}
+                                        </div>
                                       </motion.div>
                                     </>
                                   )}
                                 </AnimatePresence>
-                              </>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => setSelectedSantri(s)}
-                                className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-slate-50 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-all border border-slate-100 cursor-pointer shadow-2xs active:scale-90"
-                                title="Lihat Detail Biodata"
-                              >
-                                <Eye className="h-4 w-4" />
-                              </button>
-                            )}
-                          </div>
-
-                        </div>
-                      </td>
+                              </div>
+                            </td>
+                          );
+                        })
+                      )}
 
                     </tr>
                   );
