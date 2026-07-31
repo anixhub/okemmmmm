@@ -1198,61 +1198,63 @@ export default function LembagaKelasSub({
 
     const isAktif = (s: Santri) => (s.statusKeanggotaan || 'Aktif') === 'Aktif';
 
+    let currentClassStudentIds: string[] = [];
     if (activeTab === 'Rombel') {
-      // Students who are NOT already in this Rombel Group AND are active
-      const alreadyAssignedIds = assignmentsList
+      currentClassStudentIds = assignmentsList
         .filter(a => a.kelompokId === selectedKelas.id)
         .map(a => a.santriId);
-      return santriList.filter(s => 
-        isGenderMatch(s.gender, selectedGender) && 
-        isAktif(s) && 
-        !alreadyAssignedIds.includes(s.id)
-      );
-    } else if (activeTab === 'Internal') {
-      // Internal Pondok: Only active santri (whether EMIS terdaftar or not)
-      const isCalonClass = isDefaultClass(selectedKelas);
-      const currentClassStudentIds = selectedKelas ? getStudentsInClass(selectedKelas, selectedLembaga).map(s => s.id) : [];
-
-      if (isCalonClass) {
-        return santriList.filter(s => {
-          if (!isGenderMatch(s.gender, selectedGender)) return false;
-          if (!isAktif(s)) return false;
-          if (currentClassStudentIds.includes(s.id)) return false;
-          return true;
-        });
-      } else {
-        return santriList.filter(s => {
-          if (!isGenderMatch(s.gender, selectedGender)) return false;
-          if (!isAktif(s)) return false;
-          if (!isStudentInLembaga(s, selectedLembaga)) return false;
-          if (currentClassStudentIds.includes(s.id)) return false;
-          return true;
-        });
-      }
     } else {
-      // Formal Education
-      const isCalonClass = isDefaultClass(selectedKelas);
-      const currentClassStudentIds = selectedKelas ? getStudentsInClass(selectedKelas, selectedLembaga).map(s => s.id) : [];
-
-      if (isCalonClass) {
-        return santriList.filter(s => {
-          if (!isGenderMatch(s.gender, selectedGender)) return false;
-          if (!isAktif(s)) return false;
-          if (currentClassStudentIds.includes(s.id)) return false;
-          return true;
-        });
-      } else {
-        return santriList.filter(s => {
-          if (!isGenderMatch(s.gender, selectedGender)) return false;
-          if (!isAktif(s)) return false;
-          if (!isEmisTerdaftar(s.statusEmis)) return false;
-          if (!isStudentInLembaga(s, selectedLembaga)) return false;
-          if (currentClassStudentIds.includes(s.id)) return false;
-          return true;
-        });
-      }
+      currentClassStudentIds = selectedLembaga ? getStudentsInClass(selectedKelas, selectedLembaga).map(s => s.id) : [];
     }
+
+    return santriList.filter(s => 
+      isGenderMatch(s.gender, selectedGender) && 
+      isAktif(s) && 
+      !currentClassStudentIds.includes(s.id)
+    );
   };
+
+  // Helper: Get formal institution and class section for a student
+  const getFormalSectionForStudent = (s: Santri): { key: string; label: string } => {
+    const matchingLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal' && isGenderMatch(l.gender, selectedGender));
+    const l = matchingLembagas.find(lem => isStudentInLembaga(s, lem));
+    if (!l) {
+      return { key: 'Belum', label: 'Belum Tergabung' };
+    }
+
+    const classes = getClassesOfLembaga(l.id);
+    const c = classes.find(cls => {
+      const students = getStudentsInClass(cls, l);
+      return students.some(st => st.id === s.id);
+    });
+
+    if (c) {
+      return { key: `${l.id}:${c.id}`, label: `${l.kode || l.nama} : ${c.nama}` };
+    }
+
+    const defaultC = classes.find(isDefaultClass) || classes[0];
+    if (defaultC) {
+      return { key: `${l.id}:${defaultC.id}`, label: `${l.kode || l.nama} : ${defaultC.nama}` };
+    }
+
+    return { key: 'Belum', label: 'Belum Tergabung' };
+  };
+
+  const formalSectionsMap: { [key: string]: string } = {};
+  if (activeTab !== 'Rombel' && activeTab !== 'Internal') {
+    const matchingLembagas = lembagasList.filter(l => getLembagaJenis(l) === 'Formal' && isGenderMatch(l.gender, selectedGender));
+    matchingLembagas.forEach(l => {
+      const classes = getClassesOfLembaga(l.id);
+      classes.forEach(c => {
+        if (selectedLembaga && selectedKelas && String(l.id) === String(selectedLembaga.id) && String(c.id) === String(selectedKelas.id)) {
+          return; // Exclude target class being added to
+        }
+        const key = `${l.id}:${c.id}`;
+        const label = `${l.kode || l.nama} : ${c.nama}`;
+        formalSectionsMap[key] = label;
+      });
+    });
+  }
 
   const eligibleStudents = getEligibleStudentsForAdd();
 
@@ -1266,7 +1268,7 @@ export default function LembagaKelasSub({
   ).sort();
 
   const targetLembagaClasses = selectedLembaga 
-    ? getClassesOfLembaga(selectedLembaga.id).filter(c => !isDefaultClass(c) && c.id !== selectedKelas?.id)
+    ? getClassesOfLembaga(selectedLembaga.id).filter(c => c.id !== selectedKelas?.id)
     : [];
 
   const classStudentSets: { [classId: string]: Set<string> } = {};
@@ -1290,9 +1292,12 @@ export default function LembagaKelasSub({
         )
       );
       belongingName = ass ? (groupsList.find(g => g.id === ass.kelompokId)?.nama || '') : '';
-    } else {
+    } else if (activeTab === 'Internal') {
       const foundClass = targetLembagaClasses.find(c => classStudentSets[c.id]?.has(s.id));
       belongingName = foundClass ? foundClass.nama : '';
+    } else {
+      const secInfo = getFormalSectionForStudent(s);
+      belongingName = secInfo.label;
     }
 
     const matchesSearch = (
@@ -1319,12 +1324,19 @@ export default function LembagaKelasSub({
         } else {
           if (!ass || ass.kelompokId !== addMemberGroupFilter) return false;
         }
-      } else {
+      } else if (activeTab === 'Internal') {
         const foundClass = targetLembagaClasses.find(c => classStudentSets[c.id]?.has(s.id));
         if (addMemberGroupFilter === 'Belum') {
           if (foundClass) return false;
         } else {
           if (!foundClass || foundClass.id !== addMemberGroupFilter) return false;
+        }
+      } else {
+        const secInfo = getFormalSectionForStudent(s);
+        if (addMemberGroupFilter === 'Belum') {
+          if (secInfo.key !== 'Belum') return false;
+        } else {
+          if (secInfo.key !== addMemberGroupFilter) return false;
         }
       }
     }
@@ -3694,7 +3706,7 @@ export default function LembagaKelasSub({
                           className="w-full py-1.5 pl-2.5 pr-7 text-xs rounded-xl border border-slate-200 bg-white text-slate-700 font-bold focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 outline-none appearance-none cursor-pointer truncate"
                         >
                           <option value="Semua">
-                            {activeTab === 'Rombel' ? 'Semua Kelompok' : 'Semua Kelas'}
+                            {activeTab === 'Rombel' ? 'Semua Kelompok' : 'Semua Lembaga & Kelas'}
                           </option>
                           <option value="Belum">Belum Tergabung</option>
                           {activeTab === 'Rombel' ? (
@@ -3706,9 +3718,13 @@ export default function LembagaKelasSub({
                               .map(g => (
                                 <option key={g.id} value={g.id}>{g.nama}</option>
                               ))
-                          ) : (
+                          ) : activeTab === 'Internal' ? (
                             targetLembagaClasses.map(c => (
                               <option key={c.id} value={c.id}>{c.nama}</option>
+                            ))
+                          ) : (
+                            Object.entries(formalSectionsMap).map(([secKey, secLabel]) => (
+                              <option key={secKey} value={secKey}>{secLabel}</option>
                             ))
                           )}
                         </select>
@@ -3763,8 +3779,8 @@ export default function LembagaKelasSub({
                             }
                           }
                         });
-                      } else {
-                        // Formal or Internal
+                      } else if (activeTab === 'Internal') {
+                        // Internal
                         sectionsMap['Belum'] = { label: 'Belum Tergabung', students: [] };
                         targetLembagaClasses.forEach(c => {
                           sectionsMap[c.id] = { label: c.nama, students: [] };
@@ -3778,6 +3794,21 @@ export default function LembagaKelasSub({
                             } else {
                               sectionsMap[belongingClass.id] = { label: belongingClass.nama, students: [s] };
                             }
+                          } else {
+                            sectionsMap['Belum'].students.push(s);
+                          }
+                        });
+                      } else {
+                        // Formal Education
+                        sectionsMap['Belum'] = { label: 'Belum Tergabung', students: [] };
+                        Object.entries(formalSectionsMap).forEach(([secKey, secLabel]) => {
+                          sectionsMap[secKey] = { label: secLabel, students: [] };
+                        });
+
+                        searchedEligibleStudents.forEach(s => {
+                          const secInfo = getFormalSectionForStudent(s);
+                          if (sectionsMap[secInfo.key]) {
+                            sectionsMap[secInfo.key].students.push(s);
                           } else {
                             sectionsMap['Belum'].students.push(s);
                           }

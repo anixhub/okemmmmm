@@ -81,17 +81,6 @@ const isSantriDataComplete = (s: Santri): boolean => {
   return true;
 };
 
-const isMonitoringWajibComplete = (s: Santri, keys: (keyof Santri)[] = []): boolean => {
-  const activeKeys = keys && keys.length > 0 ? keys : DEFAULT_WAJIB_KEYS;
-  for (const field of activeKeys) {
-    const val = s[field];
-    if (val === undefined || val === null || String(val).trim() === '' || String(val).trim() === '-') {
-      return false;
-    }
-  }
-  return true;
-};
-
 const isCellEmpty = (s: Santri, key: string): boolean => {
   switch (key) {
     case 'nama':
@@ -173,6 +162,16 @@ const isCellEmpty = (s: Santri, key: string): boolean => {
       return val === undefined || val === null || String(val).trim() === '' || String(val).trim() === '-';
     }
   }
+};
+
+const isMonitoringWajibComplete = (s: Santri, keys: (keyof Santri)[] = []): boolean => {
+  const activeKeys = keys && keys.length > 0 ? keys : DEFAULT_WAJIB_KEYS;
+  for (const field of activeKeys) {
+    if (isCellEmpty(s, field as string)) {
+      return false;
+    }
+  }
+  return true;
 };
 
 export default function SantriTableView({

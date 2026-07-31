@@ -49,10 +49,30 @@ export const ALL_COLUMNS: ColumnConfig[] = [
   { key: 'catatan', label: 'Catatan', description: 'Catatan Khusus Keterangan Santri' },
 ];
 
+export const DEFAULT_TABLE_COLUMNS: (keyof Santri)[] = [
+  'nis',
+  'nik',
+  'nisn',
+  'statusKeanggotaan',
+  'pendidikanTerakhir',
+  'statusEmis',
+  'pendidikanFormal'
+];
+
 export const DEFAULT_WAJIB_KEYS: (keyof Santri)[] = [
-  'nis', 'gender', 'nik', 'nisn', 'tempatLahir', 'tanggalLahir', 
-  'desa', 'kecamatan', 'kabupaten', 'provinsi', 'pendidikanTerakhir', 
-  'namaAyah', 'namaIbu', 'statusKeanggotaan', 'noHp', 'tanggalMasuk', 'statusEmis'
+  'nis',
+  'nik',
+  'nisn',
+  'statusKeanggotaan',
+  'pendidikanTerakhir',
+  'statusEmis',
+  'pendidikanFormal',
+  'namaAyah',
+  'namaIbu',
+  'desa',
+  'kecamatan',
+  'kabupaten',
+  'provinsi'
 ];
 
 export const isFieldFilled = (value: any): boolean => {

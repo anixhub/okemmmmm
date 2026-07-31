@@ -33,7 +33,7 @@ import {
   ClipboardCheck,
   FileWarning
 } from 'lucide-react';
-import { ALL_COLUMNS, DEFAULT_WAJIB_KEYS } from '../constants/monitoringColumns';
+import { ALL_COLUMNS, DEFAULT_WAJIB_KEYS, DEFAULT_TABLE_COLUMNS } from '../constants/monitoringColumns';
 import { Santri } from '../types';
 import { DEFAULT_ROLES } from '../lib/permissions';
 import { 
@@ -135,13 +135,9 @@ export default function SekretarisView({
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
   const [showPageJumpDropdown, setShowPageJumpDropdown] = useState<boolean>(false);
   const [visibleColumns, setVisibleColumns] = useState<Record<string, boolean>>(() => {
-    const initial: Record<string, boolean> = {
-      pendidikanFormal: true,
-      kelas: true,
-      kamar: true,
-    };
+    const initial: Record<string, boolean> = {};
     ALL_COLUMNS.forEach((col) => {
-      initial[col.key] = DEFAULT_WAJIB_KEYS.includes(col.key);
+      initial[col.key] = DEFAULT_TABLE_COLUMNS.includes(col.key);
     });
     return initial;
   });
