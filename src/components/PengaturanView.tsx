@@ -2393,7 +2393,7 @@ export default function PengaturanView({
               });
 
               // Pagination
-              const itemsPerPage = 5;
+              const itemsPerPage = 50;
               const totalPages = Math.ceil(sortedCredentials.length / itemsPerPage) || 1;
               const paginatedItems = sortedCredentials.slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage);
 

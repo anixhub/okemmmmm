@@ -345,7 +345,7 @@ export default function KamarSub({
   });
 
   // Pagination
-  const itemsPerPage = 15;
+  const itemsPerPage = 50;
   const totalPages = Math.ceil(sortedStudents.length / itemsPerPage) || 1;
   const activePage = Math.min(currentPage, totalPages);
   const startIndex = (activePage - 1) * itemsPerPage;

@@ -30,6 +30,7 @@ import { DEFAULT_WAJIB_KEYS } from '../../../constants/monitoringColumns';
 
 interface SantriTableViewProps {
   paginatedSantri: Santri[];
+  allSantri?: Santri[];
   startIndex: number;
   isSelectionMode: boolean;
   selectedSantriIds: string[];
@@ -200,7 +201,8 @@ export default function SantriTableView({
   onUpdateSantri,
   isMonitoringMode = false,
   monitoringActiveTab = 'wajib',
-  mandatoryKeys = []
+  mandatoryKeys = [],
+  allSantri
 }: SantriTableViewProps) {
   const shouldShowColumn = (colKey: string): boolean => {
     if (colKey === 'nama') return true;
@@ -211,18 +213,24 @@ export default function SantriTableView({
     return visibleColumns[colKey] ?? false;
   };
 
+  const getSantriDataset = () => {
+    return (allSantri && allSantri.length > 0) ? allSantri : paginatedSantri;
+  };
+
   const isColumnComplete = (key: string): boolean => {
-    if (!paginatedSantri || paginatedSantri.length === 0) return true;
-    return paginatedSantri.every(s => !isCellEmpty(s, key));
+    const dataset = getSantriDataset();
+    if (!dataset || dataset.length === 0) return true;
+    return dataset.every(s => !isCellEmpty(s, key));
   };
 
   const getColumnStats = (key: string) => {
-    if (!paginatedSantri || paginatedSantri.length === 0) {
+    const dataset = getSantriDataset();
+    if (!dataset || dataset.length === 0) {
       return { filled: 0, empty: 0, total: 0, pct: 100 };
     }
-    const total = paginatedSantri.length;
+    const total = dataset.length;
     let filled = 0;
-    paginatedSantri.forEach(s => {
+    dataset.forEach(s => {
       if (!isCellEmpty(s, key)) filled++;
     });
     const empty = total - filled;
@@ -238,8 +246,9 @@ export default function SantriTableView({
   } | null>(null);
 
   const isNoColumnComplete = (): boolean => {
-    if (!paginatedSantri || paginatedSantri.length === 0) return true;
-    return paginatedSantri.every(s => isMonitoringWajibComplete(s, mandatoryKeys));
+    const dataset = getSantriDataset();
+    if (!dataset || dataset.length === 0) return true;
+    return dataset.every(s => isMonitoringWajibComplete(s, mandatoryKeys));
   };
   const [activeEmisDropdownId, setActiveEmisDropdownId] = React.useState<string | null>(null);
   const [activeVervalDropdownId, setActiveVervalDropdownId] = React.useState<string | null>(null);

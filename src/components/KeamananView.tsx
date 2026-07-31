@@ -2392,7 +2392,7 @@ export default function KeamananView({
   const [filterKamar, setFilterKamar] = useState<string>('Semua');
   const [showCatatanFilters, setShowCatatanFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
-  const [itemsPerPage, setItemsPerPage] = useState<number>(10);
+  const [itemsPerPage, setItemsPerPage] = useState<number>(50);
   const [showPageJumpDropdown, setShowPageJumpDropdown] = useState(false);
   const [sortKey, setSortKey] = useState<string>('nama');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');

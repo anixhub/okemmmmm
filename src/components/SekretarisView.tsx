@@ -31,7 +31,8 @@ import {
   Activity,
   SlidersHorizontal,
   ClipboardCheck,
-  FileWarning
+  FileWarning,
+  Building2
 } from 'lucide-react';
 import { ALL_COLUMNS, DEFAULT_WAJIB_KEYS, DEFAULT_TABLE_COLUMNS } from '../constants/monitoringColumns';
 import { Santri } from '../types';
@@ -130,7 +131,7 @@ export default function SekretarisView({
   const [sortKey, setSortKey] = useState<string>('nama');
   const [sortDirection, setSortDirection] = useState<'asc' | 'desc'>('asc');
   const [currentPage, setCurrentPage] = useState<number>(1);
-  const [pageSize, setPageSize] = useState<number>(10);
+  const [pageSize, setPageSize] = useState<number>(50);
   const [showColumnConfig, setShowColumnConfig] = useState<boolean>(false);
   const [showSortDropdown, setShowSortDropdown] = useState<boolean>(false);
   const [showPageJumpDropdown, setShowPageJumpDropdown] = useState<boolean>(false);
@@ -1132,7 +1133,8 @@ export default function SekretarisView({
       (s.asal && s.asal.toLowerCase().includes(searchQuery.toLowerCase())) ||
       (s.kamar && s.kamar.toLowerCase().includes(searchQuery.toLowerCase()));
     
-    const matchesStatus = statusFilter === 'semua' || s.statusKeanggotaan === statusFilter;
+    const matchesStatus = statusFilter === 'semua' 
+      || (statusFilter === 'Alumni' ? (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal') : s.statusKeanggotaan === statusFilter);
 
     const matchesGender = genderFilter === 'semua' || s.gender === genderFilter;
     const matchesDomisili = isDomisiliDisabled || domisiliFilter === 'semua' || s.statusDomisili === domisiliFilter;
@@ -1248,6 +1250,67 @@ export default function SekretarisView({
       totalTidakWajibCells
     };
   }, [isMonitoringMode, filteredSantri, mandatoryKeys]);
+
+  // Count of santri whose mandatory fields are complete
+  const termonitorSantriCount = useMemo(() => {
+    if (!filteredSantri || filteredSantri.length === 0) return 0;
+    const activeKeys = mandatoryKeys && mandatoryKeys.length > 0 ? mandatoryKeys : DEFAULT_WAJIB_KEYS;
+    return filteredSantri.filter(s => {
+      return activeKeys.every(field => {
+        const val = s[field as keyof Santri];
+        if (val === undefined || val === null) return false;
+        const str = String(val).trim();
+        return str !== '' && str !== '-';
+      });
+    }).length;
+  }, [filteredSantri, mandatoryKeys]);
+
+  // Dynamic EMIS statistics per active filter group
+  const dynamicEmisStats = useMemo(() => {
+    // Define the 4 standard categories
+    const allCategories: Array<{
+      id: string;
+      labelPrefix: string;
+      gender: 'Putra' | 'Putri';
+      status: 'Aktif' | 'Alumni';
+      color: string;
+      bgTrack: string;
+    }> = [
+      { id: 'aktifPutra', labelPrefix: 'Santri Aktif', gender: 'Putra', status: 'Aktif', color: '#007a4b', bgTrack: '#e2f0e8' },
+      { id: 'alumniPutra', labelPrefix: 'Santri Alumni', gender: 'Putra', status: 'Alumni', color: '#007a4b', bgTrack: '#e2f0e8' },
+      { id: 'aktifPutri', labelPrefix: 'Santri Aktif', gender: 'Putri', status: 'Aktif', color: '#2b7fff', bgTrack: '#e2f0e8' },
+      { id: 'alumniPutri', labelPrefix: 'Santri Alumni', gender: 'Putri', status: 'Alumni', color: '#2b7fff', bgTrack: '#e2f0e8' },
+    ];
+
+    // Filter categories based on active genderFilter and statusFilter
+    const activeCategories = allCategories.filter(cat => {
+      const matchGender = genderFilter === 'semua' || genderFilter === cat.gender;
+      const matchStatus = statusFilter === 'semua' || statusFilter === cat.status;
+      return matchGender && matchStatus;
+    });
+
+    // Calculate total, terdaftar, and pct for each active category from filteredSantri
+    return activeCategories.map(cat => {
+      const catSantri = filteredSantri.filter(s => {
+        const matchGender = s.gender === cat.gender;
+        const matchStatus = cat.status === 'Aktif'
+          ? (!s.statusKeanggotaan || s.statusKeanggotaan === 'Aktif')
+          : (s.statusKeanggotaan === 'Alumni' || s.statusKeanggotaan === 'Meninggal');
+        return matchGender && matchStatus;
+      });
+
+      const total = catSantri.length;
+      const terdaftar = catSantri.filter(s => s.statusEmis === 'Terdaftar').length;
+      const pct = total > 0 ? Math.round((terdaftar / total) * 100) : 0;
+
+      return {
+        ...cat,
+        total,
+        terdaftar,
+        pct
+      };
+    });
+  }, [filteredSantri, genderFilter, statusFilter]);
 
 
 
@@ -1400,81 +1463,162 @@ export default function SekretarisView({
         </div>
       </div>
 
-        {/* Monitoring Mode Report Summary Cards */}
+        {/* Monitoring Mode Header Container: Left = Monitor Kelengkapan Data, Right = Monitor Emis Terdaftar */}
         {isMonitoringMode && subTab === 'santri' && viewMode === 'table' && (
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Card 1: Total Santri Terpantau */}
-            <div className="bg-white border border-slate-200/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-              <div>
-                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block mb-1">
-                  Total Santri Terpantau
-                </span>
-                <h3 className="text-2xl font-black text-slate-800 tracking-tight">
-                  {filteredSantri.length}
+          <div className="bg-[#f7fbf8] border border-[#e1efe6] rounded-xl shadow-xs overflow-hidden py-2.5 px-3 sm:px-5 my-2">
+            <div className="grid grid-cols-1 lg:grid-cols-2 divide-y lg:divide-y-0 lg:divide-x divide-[#e1efe6] gap-y-3 lg:gap-y-0">
+              
+              {/* Left Box: Monitor Kelengkapan Data */}
+              <div className="flex flex-col items-center justify-center lg:pr-5 py-1">
+                <h3 className="font-bold text-slate-800 text-xs mb-1.5 text-center">
+                  Monitor Kelengkapan Data
                 </h3>
-                <p className="text-[11px] font-bold text-slate-500 mt-1">
-                  Biodata terfilter saat ini
-                </p>
-              </div>
-              <div className="h-12 w-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-600 shrink-0">
-                <ClipboardCheck className="h-6 w-6" />
-              </div>
-            </div>
 
-            {/* Card 2: Kelengkapan Data Wajib */}
-            <div className="bg-white border border-emerald-100/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-              <div className="flex-1 min-w-0 pr-4">
-                <span className="text-[10px] font-black text-emerald-600 uppercase tracking-wider block mb-1">
-                  Rasio Kelengkapan Wajib
-                </span>
-                <div className="flex items-baseline gap-2">
-                  <h3 className="text-2xl font-black text-emerald-700 tracking-tight">
-                    {monitoringStats.wajibPct}%
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    ({monitoringStats.totalWajibFilled}/{monitoringStats.totalWajibCells} data)
-                  </span>
-                </div>
-                
-                {/* Progress bar */}
-                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-                  <div 
-                    className="bg-emerald-600 h-1.5 rounded-full transition-all duration-500" 
-                    style={{ width: `${monitoringStats.wajibPct}%` }}
-                  />
-                </div>
-              </div>
-              <div className="h-12 w-12 rounded-xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-600 shrink-0">
-                <FileCheck2 className="h-6 w-6" />
-              </div>
-            </div>
+                <div className="flex items-center justify-center gap-4 sm:gap-6 w-full px-2">
+                  {/* Concentric Donut SVG */}
+                  <div className="relative w-[85px] h-[85px] sm:w-[90px] sm:h-[90px] flex items-center justify-center shrink-0">
+                    <svg className="w-full h-full" viewBox="0 0 180 180">
+                      {/* Outer Ring Background (Light Purple) */}
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="72"
+                        fill="transparent"
+                        stroke="#f0ebfe"
+                        strokeWidth="14"
+                      />
+                      {/* Outer Ring Progress Arc (Data Tdk Wajib - Purple #6536e4) */}
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="72"
+                        fill="transparent"
+                        stroke="#6536e4"
+                        strokeWidth="14"
+                        strokeDasharray={452.39}
+                        strokeDashoffset={452.39 * (1 - (monitoringStats.tidakWajibPct / 100))}
+                        strokeLinecap="round"
+                        transform="rotate(-90 90 90)"
+                        className="transition-all duration-700 ease-out"
+                      />
 
-            {/* Card 3: Kelengkapan Data Tidak Wajib */}
-            <div className="bg-white border border-indigo-100/80 rounded-2xl p-5 shadow-sm flex items-center justify-between">
-              <div className="flex-1 min-w-0 pr-4">
-                <span className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block mb-1">
-                  Rasio Kelengkapan Tambahan
-                </span>
-                <div className="flex items-baseline gap-2">
-                  <h3 className="text-2xl font-black text-indigo-700 tracking-tight">
-                    {monitoringStats.tidakWajibPct}%
-                  </h3>
-                  <span className="text-[10px] font-bold text-slate-400">
-                    ({monitoringStats.totalTidakWajibFilled}/{monitoringStats.totalTidakWajibCells} data)
-                  </span>
-                </div>
+                      {/* Inner Ring Background (Light Green) */}
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="52"
+                        fill="transparent"
+                        stroke="#e6f4ea"
+                        strokeWidth="14"
+                      />
+                      {/* Inner Ring Progress Arc (Data Wajib - Forest Green #007a4b) */}
+                      <circle
+                        cx="90"
+                        cy="90"
+                        r="52"
+                        fill="transparent"
+                        stroke="#007a4b"
+                        strokeWidth="14"
+                        strokeDasharray={326.72}
+                        strokeDashoffset={326.72 * (1 - (monitoringStats.wajibPct / 100))}
+                        strokeLinecap="round"
+                        transform="rotate(-90 90 90)"
+                        className="transition-all duration-700 ease-out"
+                      />
+                    </svg>
 
-                {/* Progress bar */}
-                <div className="w-full bg-slate-100 rounded-full h-1.5 mt-2 overflow-hidden">
-                  <div 
-                    className="bg-indigo-600 h-1.5 rounded-full transition-all duration-500" 
-                    style={{ width: `${monitoringStats.tidakWajibPct}%` }}
-                  />
+                    {/* Donut Center Label */}
+                    <div className="absolute inset-0 flex flex-col items-center justify-center text-center pointer-events-none">
+                      <span className="text-[9px] font-normal text-slate-500 tracking-tight leading-none mb-0.5">
+                        Termonitor
+                      </span>
+                      <span className="text-sm font-extrabold text-slate-900 tracking-tight leading-none my-0.5">
+                        {filteredSantri.length}
+                      </span>
+                      <span className="text-[8px] font-normal text-slate-400 tracking-tight leading-none">
+                        Data Santri
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Data Wajib & Data Tdk Wajib Side-by-Side */}
+                  <div className="flex items-center gap-4 sm:gap-6">
+                    {/* Data Wajib */}
+                    <div>
+                      <span className="text-xs font-medium text-slate-700 block mb-0.5">
+                        Data Wajib
+                      </span>
+                      <div className="flex items-baseline gap-0.5">
+                        <span className="text-lg font-bold text-[#007a4b] leading-tight">
+                          {monitoringStats.totalWajibFilled}
+                        </span>
+                        <span className="text-xs font-normal text-[#007a4b] leading-tight">
+                          /{monitoringStats.totalWajibCells}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Data Tdk Wajib */}
+                    <div>
+                      <span className="text-xs font-medium text-slate-700 block mb-0.5">
+                        Data Tdk Wajib
+                      </span>
+                      <div className="flex items-baseline gap-0.5">
+                        <span className="text-lg font-bold text-[#6536e4] leading-tight">
+                          {monitoringStats.totalTidakWajibFilled}
+                        </span>
+                        <span className="text-xs font-normal text-[#6536e4] leading-tight">
+                          /{monitoringStats.totalTidakWajibCells}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               </div>
-              <div className="h-12 w-12 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 shrink-0">
-                <FileWarning className="h-6 w-6" />
+
+              {/* Right Box: Monitor Emis Terdaftar */}
+              <div className="flex flex-col items-center justify-center pt-2 lg:pt-0 lg:pl-5 py-1">
+                <h3 className="font-bold text-slate-800 text-xs mb-1.5 text-center">
+                  Monitor Emis Terdaftar
+                </h3>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-5 gap-y-2 w-full px-2">
+                  {dynamicEmisStats.map((item) => (
+                    <div key={item.id} className="flex flex-col">
+                      <div className="flex items-center justify-between text-[11px] mb-0.5">
+                        <span className="font-normal text-slate-700">
+                          {item.labelPrefix} <span style={{ color: item.color }} className="font-medium">{item.gender}</span>
+                        </span>
+                        <span className="font-bold text-[11px]" style={{ color: item.color }}>
+                          {item.terdaftar}
+                          <span className="font-normal text-slate-500 text-[10px]">/{item.total}</span>
+                        </span>
+                      </div>
+                      <div className="w-full bg-[#dcf0e4] rounded-full h-[15px] overflow-hidden relative flex items-center">
+                        <div
+                          className="h-full rounded-full transition-all duration-500 flex items-center justify-start pl-2 shrink-0"
+                          style={{
+                            backgroundColor: item.color,
+                            width: `${Math.max(item.pct, item.pct > 0 ? 12 : 0)}%`
+                          }}
+                        >
+                          {item.pct > 0 && (
+                            <span className="text-[9px] font-bold text-white leading-none whitespace-nowrap">
+                              {item.pct}%
+                            </span>
+                          )}
+                        </div>
+                        {item.pct === 0 && (
+                          <span className="text-[9px] font-bold text-slate-500 pl-2 leading-none">
+                            0%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
+
             </div>
           </div>
         )}
@@ -2491,6 +2635,7 @@ export default function SekretarisView({
           ) : viewMode === 'table' ? (
             <SantriTableView
               paginatedSantri={paginatedSantri}
+              allSantri={filteredSantri}
               startIndex={startIndex}
               isSelectionMode={isSelectionMode}
               selectedSantriIds={selectedSantriIds}

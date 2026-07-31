@@ -1413,7 +1413,7 @@ export default function LembagaKelasSub({
   const emisBelumPercent = totalStudents > 0 ? 100 - emisRegisteredPercent : 0;
 
   // Pagination & Students logic calculated at component root for consistent sharing
-  const itemsPerPage = 15;
+  const itemsPerPage = 50;
   const totalPages = Math.ceil(filteredStudents.length / itemsPerPage) || 1;
   const activePage = Math.min(currentPage, totalPages);
   const startIndex = (activePage - 1) * itemsPerPage;
