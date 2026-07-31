@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   Search, 
@@ -158,8 +159,17 @@ export default function DataAkademikSub({
 
   // Horizontal Scroll Navigation state and refs
   const containerRef = React.useRef<HTMLDivElement>(null);
+  const floatingHeaderRef = React.useRef<HTMLDivElement>(null);
+  const floatingHeaderOuterRef = React.useRef<HTMLDivElement>(null);
+
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [stickyTop, setStickyTop] = useState(64);
+  const [floatingHeaderStyle, setFloatingHeaderStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 });
+
+  const scrollSourceRef = React.useRef<'main' | 'floating' | null>(null);
+  const scrollTimeoutRef = React.useRef<number | null>(null);
 
   const updateScrollButtons = () => {
     const container = containerRef.current;
@@ -174,6 +184,7 @@ export default function DataAkademikSub({
   const scrollTable = (direction: 'left' | 'right') => {
     const container = containerRef.current;
     if (container) {
+      scrollSourceRef.current = 'main';
       const scrollAmount = 300;
       const targetScroll = direction === 'left' 
         ? container.scrollLeft - scrollAmount 
@@ -188,7 +199,82 @@ export default function DataAkademikSub({
 
   const handleTableScroll = () => {
     updateScrollButtons();
+    const container = containerRef.current;
+    if (!container) return;
+
+    if (scrollSourceRef.current !== 'floating') {
+      scrollSourceRef.current = 'main';
+      if (scrollTimeoutRef.current) {
+        window.clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = window.setTimeout(() => {
+        scrollSourceRef.current = null;
+      }, 150);
+
+      if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
+        floatingHeaderRef.current.scrollLeft = container.scrollLeft;
+      }
+    }
+
+    const mainHeader = document.querySelector('header');
+    const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
+    const computedStickyTop = mainHeaderHeight;
+
+    setStickyTop(computedStickyTop);
+
+    const containerRect = container.getBoundingClientRect();
+    const isHeaderFloating = 
+      containerRect.top <= computedStickyTop && 
+      containerRect.bottom > (computedStickyTop + 48);
+    setIsScrolled(isHeaderFloating);
+
+    setFloatingHeaderStyle({
+      left: containerRect.left,
+      width: containerRect.width,
+    });
   };
+
+  useEffect(() => {
+    updateScrollButtons();
+    const timer = setTimeout(() => {
+      updateScrollButtons();
+      handleTableScroll();
+    }, 100);
+
+    const handleResize = () => {
+      updateScrollButtons();
+      handleTableScroll();
+    };
+
+    const handleGlobalScroll = () => {
+      handleTableScroll();
+    };
+
+    window.addEventListener('resize', handleResize, { passive: true });
+    document.addEventListener('scroll', handleGlobalScroll, { capture: true, passive: true });
+
+    let observer: ResizeObserver | null = null;
+    const container = containerRef.current;
+    if (container) {
+      observer = new ResizeObserver(() => {
+        updateScrollButtons();
+      });
+      observer.observe(container);
+      const table = container.querySelector('table');
+      if (table) {
+        observer.observe(table);
+      }
+    }
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('scroll', handleGlobalScroll, { capture: true });
+      if (observer) {
+        observer.disconnect();
+      }
+    };
+  }, []);
 
   // Active Lembagas list based on gender filter and selected mode (formal vs internal)
   const activeLembagas = lembagasList.filter(l => {
@@ -1042,17 +1128,69 @@ export default function DataAkademikSub({
     );
   };
 
-  const renderScrollButtons = () => {
+  const renderTableHeadContents = (headerClass: string = 'bg-slate-50 text-slate-400 border-b border-slate-100') => (
+    <tr>
+      {isSelectionMode && (
+        <th className={`px-3 py-4 text-center sticky left-0 z-40 border-r border-slate-100 w-12 min-w-[48px] ${headerClass}`}>
+          <div className="flex items-center justify-center">
+            <input
+              type="checkbox"
+              className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+              checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
+              onChange={(e) => {
+                if (e.target.checked) {
+                  const newIds = [...selectedSantriIds];
+                  paginatedSantri.forEach(s => {
+                    if (!newIds.includes(s.id)) {
+                      newIds.push(s.id);
+                    }
+                  });
+                  setSelectedSantriIds(newIds);
+                } else {
+                  const paginatedIds = paginatedSantri.map(s => s.id);
+                  setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
+                }
+              }}
+            />
+          </div>
+        </th>
+      )}
+
+      <th className={`px-2 py-4 static sm:sticky ${
+        isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
+      } z-40 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 text-center w-[42px] min-w-[42px] max-w-[42px] font-display text-xs font-bold uppercase tracking-wider ${headerClass}`}>
+        No.
+      </th>
+
+      {renderSortHeader('nama', 'Nama Lengkap', true, isSelectionMode ? 'sm:left-[90px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]' : 'sm:left-[42px] sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]')}
+
+      {renderSortHeader('nis', 'NIS')}
+      {renderSortHeader('alamat', 'Alamat')}
+      {academicType !== 'rombel' ? (
+        activeLembagas.map(lem => renderSortHeader('lembaga_' + lem.id, lem.nama))
+      ) : (
+        categoriesList.map(cat => renderSortHeader('rombel_' + cat.id, cat.nama))
+      )}
+
+      <th className={`px-2 py-4 text-center w-12 font-display text-xs font-bold uppercase tracking-wider sticky right-0 z-40 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] border-l border-slate-100 ${headerClass}`}>
+        Aksi
+      </th>
+    </tr>
+  );
+
+  const renderScrollButtons = (isFloating: boolean = false) => {
     if (!canScrollRight) return null;
     return (
       <button
-        id="table-scroll-right-btn"
+        id={isFloating ? "table-scroll-right-btn-floating" : "table-scroll-right-btn"}
         type="button"
         onClick={(e) => {
           e.stopPropagation();
           scrollTable('right');
         }}
-        className="absolute right-0 top-[26px] -translate-y-1/2 translate-x-1/2 z-[100] flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100"
+        className={`absolute right-0 translate-x-1/2 ${
+          isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
+        } z-[100] flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md transition-all duration-200 hover:bg-slate-50 hover:scale-105 active:scale-95 cursor-pointer opacity-100`}
         title="Gulir Kanan"
       >
         <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
@@ -1168,7 +1306,7 @@ export default function DataAkademikSub({
       </div>
 
       {/* Search and Filters Box */}
-      <div className="sticky top-16 z-[45] bg-white/95 backdrop-blur-md p-4 rounded-2xl border border-slate-200/80 shadow-md sm:p-5">
+      <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-sm sm:p-5">
         <div className="flex items-center gap-2">
           
           {/* Search Box */}
@@ -1707,82 +1845,71 @@ export default function DataAkademikSub({
 
       {/* Main Table View with sticky header */}
       <div id="academic-table-section" className="relative group/table overflow-visible">
-        {renderScrollButtons()}
+        {renderScrollButtons(false)}
+
+        {/* Viewport-sticky floating header portal */}
+        {typeof document !== 'undefined' && createPortal(
+          <div
+            ref={floatingHeaderOuterRef}
+            className="fixed z-[45] bg-slate-50 border border-slate-200 shadow-md rounded-t-2xl overflow-visible"
+            style={{
+              top: `${stickyTop}px`,
+              left: `${floatingHeaderStyle.left}px`,
+              width: `${floatingHeaderStyle.width}px`,
+              display: isScrolled ? 'block' : 'none',
+            }}
+          >
+            <div
+              ref={floatingHeaderRef}
+              onScroll={(e) => {
+                const floating = e.currentTarget;
+                if (scrollSourceRef.current !== 'main') {
+                  scrollSourceRef.current = 'floating';
+                  if (scrollTimeoutRef.current) {
+                    window.clearTimeout(scrollTimeoutRef.current);
+                  }
+                  scrollTimeoutRef.current = window.setTimeout(() => {
+                    scrollSourceRef.current = null;
+                  }, 150);
+
+                  if (containerRef.current && containerRef.current.scrollLeft !== floating.scrollLeft) {
+                    containerRef.current.scrollLeft = floating.scrollLeft;
+                  }
+                }
+              }}
+              className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+            >
+              <table className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]">
+                <thead className="bg-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wider select-none">
+                  {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100')}
+                </thead>
+              </table>
+            </div>
+            {renderScrollButtons(true)}
+          </div>,
+          document.body
+        )}
+
         <div 
           ref={containerRef}
           onScroll={handleTableScroll}
-          className="overflow-x-auto rounded-2xl border border-slate-100 bg-white shadow-sm scrollbar-thin select-none"
+          className="overflow-x-auto rounded-2xl border border-slate-200/80 bg-white shadow-sm [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none] select-none"
         >
-        {sortedSantri.length === 0 ? (
-          <div className="flex flex-col items-center justify-center p-12 text-center min-h-[400px]">
-            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 mb-4 border border-slate-100">
-              <Info className="h-6 w-6" />
+          {sortedSantri.length === 0 ? (
+            <div className="flex flex-col items-center justify-center p-12 text-center min-h-[400px]">
+              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-slate-50 text-slate-400 mb-4 border border-slate-100">
+                <Info className="h-6 w-6" />
+              </div>
+              <h3 className="font-display text-sm font-bold text-slate-700">Tidak Ada Data Ditemukan</h3>
+              <p className="text-xs text-slate-500 max-w-sm mt-1.5">
+                Santri {genderFilter} tidak ditemukan dengan kata kunci pencarian atau kriteria filter akademis yang sedang aktif.
+              </p>
             </div>
-            <h3 className="font-display text-sm font-bold text-slate-700">Tidak Ada Data Ditemukan</h3>
-            <p className="text-xs text-slate-500 max-w-sm mt-1.5">
-              Santri {genderFilter} tidak ditemukan dengan kata kunci pencarian atau kriteria filter akademis yang sedang aktif.
-            </p>
-          </div>
-        ) : (
-          <div className="overflow-x-auto scrollbar-thin max-h-[600px] min-h-[280px]">
+          ) : (
             <table className="w-full border-collapse text-left text-sm text-slate-600 min-w-[1000px]">
-              
               {/* STICKY HEADER always on top ("berada di atas selalu") */}
               <thead className="bg-slate-50 text-xs font-semibold text-slate-400 uppercase tracking-wider select-none sticky top-0 z-30 shadow-[0_2px_4px_rgba(0,0,0,0.02)]">
-                <tr>
-                  
-                  {/* Sticky Checklist Column */}
-                  {isSelectionMode && (
-                    <th className="px-3 py-4 text-center sticky left-0 bg-slate-50 z-40 border-r border-slate-100 w-12 min-w-[48px]">
-                      <div className="flex items-center justify-center">
-                        <input
-                          type="checkbox"
-                          className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                          checked={paginatedSantri.length > 0 && paginatedSantri.every(s => selectedSantriIds.includes(s.id))}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              const newIds = [...selectedSantriIds];
-                              paginatedSantri.forEach(s => {
-                                if (!newIds.includes(s.id)) {
-                                  newIds.push(s.id);
-                                }
-                              });
-                              setSelectedSantriIds(newIds);
-                            } else {
-                              const paginatedIds = paginatedSantri.map(s => s.id);
-                              setSelectedSantriIds(selectedSantriIds.filter(id => !paginatedIds.includes(id)));
-                            }
-                          }}
-                        />
-                      </div>
-                    </th>
-                  )}
-
-                  {/* Sticky No Column */}
-                  <th className={`px-2 py-4 static sm:sticky ${
-                    isSelectionMode ? 'sm:left-12' : 'sm:left-0'
-                  } bg-slate-50 z-40 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 text-center w-[42px] min-w-[42px] max-w-[42px] font-display text-xs font-bold uppercase tracking-wider text-slate-400`}>
-                    No.
-                  </th>
-
-                  {/* Sticky Nama Lengkap Column */}
-                  {renderSortHeader('nama', 'Nama Lengkap', true, isSelectionMode ? 'sm:left-28 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]' : 'sm:left-16 sm:shadow-[2px_0_5px_rgba(0,0,0,0.03)] border-r border-slate-100 min-w-[240px]')}
-
-                  {/* Rest of non-sticky columns */}
-                  {renderSortHeader('nis', 'NIS')}
-                  {renderSortHeader('alamat', 'Alamat')}
-                  {academicType !== 'rombel' ? (
-                    activeLembagas.map(lem => renderSortHeader('lembaga_' + lem.id, lem.nama))
-                  ) : (
-                    categoriesList.map(cat => renderSortHeader('rombel_' + cat.id, cat.nama))
-                  )}
-
-                  {/* Sticky Aksi Column - On the right side */}
-                  <th className="px-2 py-4 text-center w-12 bg-slate-50 font-display text-xs font-bold uppercase tracking-wider text-slate-400 sticky right-0 z-40 shadow-[-2px_0_5px_rgba(0,0,0,0.03)] border-l border-slate-100">
-                    Aksi
-                  </th>
-
-                </tr>
+                {renderTableHeadContents('bg-slate-50 text-slate-400 border-b border-slate-100')}
               </thead>
 
               <tbody className="divide-y divide-slate-100">
@@ -1816,7 +1943,7 @@ export default function DataAkademikSub({
                       {isSelectionMode && (
                         <td 
                           onClick={(e) => e.stopPropagation()}
-                          className={`px-3 py-4 text-center sticky left-0 transition-colors z-20 border-r border-slate-100 w-12 min-w-[48px] ${
+                          className={`px-3 py-4 text-center sticky left-0 transition-colors z-20 border-r border-slate-100 w-12 min-w-[48px] max-w-[48px] ${
                             isSelected ? 'bg-indigo-50' : 'bg-white group-hover:bg-slate-50'
                           }`}
                         >
@@ -1838,9 +1965,9 @@ export default function DataAkademikSub({
                       )}
 
                       {/* Sticky No Cell */}
-                      <td className={`px-4 py-4 static sm:sticky ${
-                        isSelectionMode ? 'sm:left-12' : 'sm:left-0'
-                      } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-100 text-center font-mono text-xs font-semibold ${
+                      <td className={`px-2 py-4 static sm:sticky ${
+                        isSelectionMode ? 'sm:left-[48px]' : 'sm:left-0'
+                      } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-100 text-center font-mono text-xs font-semibold w-[42px] min-w-[42px] max-w-[42px] ${
                         isSelectionMode && isSelected
                           ? 'bg-indigo-50 text-indigo-800 font-bold'
                           : 'bg-white text-slate-500 group-hover:bg-slate-50'
@@ -1850,7 +1977,7 @@ export default function DataAkademikSub({
 
                       {/* Sticky Nama Lengkap Cell */}
                       <td className={`px-6 py-4 static sm:sticky ${
-                        isSelectionMode ? 'sm:left-28' : 'sm:left-16'
+                        isSelectionMode ? 'sm:left-[90px]' : 'sm:left-[42px]'
                       } transition-colors z-20 sm:shadow-[2px_0_5px_rgba(0,0,0,0.01)] border-r border-slate-50 min-w-[240px] ${
                         isSelectionMode && isSelected
                           ? 'bg-indigo-50'
@@ -2042,10 +2169,8 @@ export default function DataAkademikSub({
                   );
                 })}
               </tbody>
-
             </table>
-          </div>
-        )}
+          )}
         </div>
       </div>
 

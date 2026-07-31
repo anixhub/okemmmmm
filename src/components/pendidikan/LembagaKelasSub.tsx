@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
   School, Plus, Trash2, Edit, Users, BookOpen, ChevronRight, ChevronLeft,
@@ -138,6 +139,15 @@ export default function LembagaKelasSub({
   const [canScrollRight, setCanScrollRight] = useState(true);
   const [isScrollable, setIsScrollable] = useState(true);
   const tableContainerRef = useRef<HTMLDivElement>(null);
+  const floatingHeaderRef = useRef<HTMLDivElement>(null);
+  const floatingHeaderOuterRef = useRef<HTMLDivElement>(null);
+
+  const [isScrolled, setIsScrolled] = useState(false);
+  const [stickyTop, setStickyTop] = useState(64);
+  const [floatingHeaderStyle, setFloatingHeaderStyle] = useState<{ left: number; width: number }>({ left: 0, width: 0 });
+
+  const scrollSourceRef = useRef<'main' | 'floating' | null>(null);
+  const scrollTimeoutRef = useRef<number | null>(null);
 
   const updateScrollButtons = () => {
     const container = tableContainerRef.current;
@@ -152,12 +162,46 @@ export default function LembagaKelasSub({
 
   const handleTableScroll = () => {
     updateScrollButtons();
+    const container = tableContainerRef.current;
+    if (!container) return;
+
+    if (scrollSourceRef.current !== 'floating') {
+      scrollSourceRef.current = 'main';
+      if (scrollTimeoutRef.current) {
+        window.clearTimeout(scrollTimeoutRef.current);
+      }
+      scrollTimeoutRef.current = window.setTimeout(() => {
+        scrollSourceRef.current = null;
+      }, 150);
+
+      if (floatingHeaderRef.current && floatingHeaderRef.current.scrollLeft !== container.scrollLeft) {
+        floatingHeaderRef.current.scrollLeft = container.scrollLeft;
+      }
+    }
+
+    const mainHeader = document.querySelector('header');
+    const mainHeaderHeight = mainHeader ? (mainHeader as HTMLElement).offsetHeight : 64;
+    const computedStickyTop = mainHeaderHeight;
+
+    setStickyTop(computedStickyTop);
+
+    const containerRect = container.getBoundingClientRect();
+    const isHeaderFloating = 
+      containerRect.top <= computedStickyTop && 
+      containerRect.bottom > (computedStickyTop + 48);
+    setIsScrolled(isHeaderFloating);
+
+    setFloatingHeaderStyle({
+      left: containerRect.left,
+      width: containerRect.width,
+    });
   };
 
   const scrollTable = (direction: 'left' | 'right') => {
     const container = tableContainerRef.current;
     if (container) {
-      const scrollAmount = 200;
+      scrollSourceRef.current = 'main';
+      const scrollAmount = 300;
       const targetScroll = direction === 'left' 
         ? container.scrollLeft - scrollAmount 
         : container.scrollLeft + scrollAmount;
@@ -168,6 +212,48 @@ export default function LembagaKelasSub({
       });
     }
   };
+
+  useEffect(() => {
+    updateScrollButtons();
+    const timer = setTimeout(() => {
+      updateScrollButtons();
+      handleTableScroll();
+    }, 100);
+
+    const handleResize = () => {
+      updateScrollButtons();
+      handleTableScroll();
+    };
+
+    const handleGlobalScroll = () => {
+      handleTableScroll();
+    };
+
+    window.addEventListener('resize', handleResize, { passive: true });
+    document.addEventListener('scroll', handleGlobalScroll, { capture: true, passive: true });
+
+    let observer: ResizeObserver | null = null;
+    const container = tableContainerRef.current;
+    if (container) {
+      observer = new ResizeObserver(() => {
+        updateScrollButtons();
+      });
+      observer.observe(container);
+      const table = container.querySelector('table');
+      if (table) {
+        observer.observe(table);
+      }
+    }
+
+    return () => {
+      clearTimeout(timer);
+      window.removeEventListener('resize', handleResize);
+      document.removeEventListener('scroll', handleGlobalScroll, { capture: true });
+      if (observer) {
+        observer.disconnect();
+      }
+    };
+  }, []);
 
   // Class Delete Confirmation state
   const [classToDelete, setClassToDelete] = useState<{ id: string; name: string } | null>(null);
@@ -260,6 +346,26 @@ export default function LembagaKelasSub({
           )}
         </div>
       </th>
+    );
+  };
+
+  const renderScrollButtons = (isFloating: boolean = false) => {
+    if (!canScrollRight) return null;
+    return (
+      <button
+        id={isFloating ? "table-scroll-right-btn-floating" : "table-scroll-right-btn"}
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          scrollTable('right');
+        }}
+        className={`absolute right-0 translate-x-1/2 ${
+          isFloating ? 'top-1/2 -translate-y-1/2' : 'top-[26px] -translate-y-1/2'
+        } z-[100] flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md hover:bg-slate-50 hover:scale-105 active:scale-95 transition-all cursor-pointer opacity-100`}
+        title="Gulir Kanan"
+      >
+        <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
+      </button>
     );
   };
   
@@ -2590,26 +2696,103 @@ export default function LembagaKelasSub({
                       return (
                         <div className="relative bg-white rounded-3xl border border-slate-100 shadow-2xs flex flex-col flex-1 min-h-0 overflow-visible">
                           {/* Scroll Right Button floating over the right end edge of header */}
-                          {canScrollRight && (
-                            <button
-                              type="button"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                scrollTable('right');
+                          {renderScrollButtons(false)}
+
+                          {/* Viewport-sticky floating header portal */}
+                          {typeof document !== 'undefined' && createPortal(
+                            <div
+                              ref={floatingHeaderOuterRef}
+                              className="fixed z-[45] bg-slate-100 border border-slate-200 shadow-md rounded-t-2xl overflow-visible"
+                              style={{
+                                top: `${stickyTop}px`,
+                                left: `${floatingHeaderStyle.left}px`,
+                                width: `${floatingHeaderStyle.width}px`,
+                                display: isScrolled ? 'block' : 'none',
                               }}
-                              className="absolute right-0 top-[26px] -translate-y-1/2 translate-x-1/2 z-[100] flex h-8 w-8 items-center justify-center rounded-full border border-slate-200 bg-white text-slate-600 shadow-md hover:bg-slate-50 hover:scale-105 active:scale-95 transition-all cursor-pointer opacity-100"
-                              title="Gulir Kanan"
                             >
-                              <ChevronRight className="h-4 w-4 stroke-[2.5] translate-x-[0.5px]" />
-                            </button>
+                              <div
+                                ref={floatingHeaderRef}
+                                onScroll={(e) => {
+                                  const floating = e.currentTarget;
+                                  if (scrollSourceRef.current !== 'main') {
+                                    scrollSourceRef.current = 'floating';
+                                    if (scrollTimeoutRef.current) {
+                                      window.clearTimeout(scrollTimeoutRef.current);
+                                    }
+                                    scrollTimeoutRef.current = window.setTimeout(() => {
+                                      scrollSourceRef.current = null;
+                                    }, 150);
+
+                                    if (tableContainerRef.current && tableContainerRef.current.scrollLeft !== floating.scrollLeft) {
+                                      tableContainerRef.current.scrollLeft = floating.scrollLeft;
+                                    }
+                                  }
+                                }}
+                                className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
+                              >
+                                <table className="w-full text-left border-collapse min-w-[1050px]">
+                                  <thead>
+                                    <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none">
+                                      <th className="sticky left-0 z-20 w-[42px] min-w-[42px] max-w-[42px] pl-2 pr-1 py-4 bg-slate-100 border-r border-slate-200 text-center font-black text-slate-600">
+                                        {isSelectionMode ? (
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              if (isAllSelected) {
+                                                const filteredIdsSet = new Set(filteredStudents.map(s => s.id));
+                                                setSelectedStudentIds(prev => prev.filter(id => !filteredIdsSet.has(id)));
+                                              } else {
+                                                const newIds = new Set([...selectedStudentIds, ...filteredStudents.map(s => s.id)]);
+                                                setSelectedStudentIds(Array.from(newIds));
+                                              }
+                                            }}
+                                            className={`h-4 w-4 rounded border flex items-center justify-center transition-colors cursor-pointer ${
+                                              isAllSelected 
+                                                ? 'bg-[#00693E] border-[#00693E] text-white' 
+                                                : isSomeSelected 
+                                                  ? 'bg-[#00693E]/20 border-[#00693E] text-[#00693E]' 
+                                                  : 'border-slate-300 bg-white hover:border-slate-400'
+                                            }`}
+                                            title={isAllSelected ? "Batal Pilih Semua" : "Pilih Semua Santri"}
+                                          >
+                                            {isAllSelected && <Check className="h-3 w-3 stroke-[3]" />}
+                                            {!isAllSelected && isSomeSelected && <div className="h-2 w-2 bg-[#00693E] rounded-xs" />}
+                                          </button>
+                                        ) : (
+                                          "No"
+                                        )}
+                                      </th>
+                                      {renderSortableHeader('Profil Santri', 'nama', 'sticky left-[42px] z-20 w-[180px] min-w-[180px] max-w-[180px] pl-2 py-4 bg-slate-100 border-r border-slate-200 relative')}
+                                      {renderSortableHeader('NISN', 'nisn', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100')}
+                                      {renderSortableHeader('NISM', 'nism', 'w-[110px] min-w-[110px] pl-1 py-4 bg-slate-100')}
+                                      {renderSortableHeader('Status', 'statusKeanggotaan', 'w-[100px] min-w-[100px] pl-1 py-4 bg-slate-100')}
+                                      {activeTab === 'Formal' ? (
+                                        <>
+                                          {isCalonPelajarPage && renderSortableHeader('EMIS', 'statusEmis', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200')}
+                                          {!isCalonPelajarPage && renderSortableHeader('Verval', 'statusVerval', 'w-[100px] min-w-[100px] pl-3 py-4 bg-slate-100 border-r border-slate-200')}
+                                        </>
+                                      ) : (
+                                        renderSortableHeader('Kamar', 'kamar', 'w-[110px] min-w-[110px] pl-3 py-4 bg-slate-100 border-r border-slate-200')
+                                      )}
+                                      <th className="sticky right-0 z-20 w-[56px] min-w-[56px] max-w-[56px] px-2 py-4 bg-slate-100 border-l border-slate-200 font-black text-slate-600 text-center shadow-[-2px_0_5px_rgba(0,0,0,0.03)]">
+                                        <span>Aksi</span>
+                                      </th>
+                                    </tr>
+                                  </thead>
+                                </table>
+                              </div>
+                              {renderScrollButtons(true)}
+                            </div>,
+                            document.body
                           )}
 
                           <div 
                             ref={tableContainerRef}
                             onScroll={handleTableScroll}
-                            className="overflow-auto scrollbar-thin flex-1 min-h-0 max-h-[480px]"
+                            className="overflow-x-auto [&::-webkit-scrollbar]:hidden [-ms-overflow-style:none] [scrollbar-width:none]"
                           >
-                            <table className="w-full text-left border-collapse min-w-[900px]">
+                            <table className="w-full text-left border-collapse min-w-[1050px]">
                               {/* Table Header - 100% Solid Background */}
                               <thead>
                                 <tr className="text-[11px] font-black uppercase tracking-wider text-slate-600 border-b border-slate-200 bg-slate-100 select-none sticky top-0 z-30 shadow-2xs">
