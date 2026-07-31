@@ -2678,189 +2678,50 @@ export default function PengaturanView({
                   </div>
                 </div>
 
-                {/* Connection Status Banner */}
-                <div className="bg-white border border-slate-200/80 rounded-3xl p-5 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
-                  <div className="flex items-center gap-4 text-left">
-                    <div className="h-14 w-14 rounded-2xl bg-emerald-50 flex items-center justify-center text-emerald-600 shadow-sm">
-                      <Cloud className="h-7 w-7" />
+                {/* Cadangan (Backup) Data Card */}
+                <div className="border border-slate-200/80 rounded-3xl p-7 bg-white shadow-xs flex flex-col space-y-6 text-left">
+                  <div className="flex items-start gap-4">
+                    <div className="h-12 w-12 rounded-2xl bg-emerald-50 border border-emerald-100 flex items-center justify-center text-emerald-700 shadow-xs shrink-0">
+                      <Download className="h-6 w-6" />
                     </div>
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-display font-black text-slate-800 text-base">
-                          {dbStatus?.connected ? 'Terkoneksi ke Supabase Cloud' : 'Supabase Belum Terkonfigurasi'}
-                        </h3>
-                        <span className="inline-flex items-center rounded-full bg-emerald-800 text-white px-2.5 py-0.5 text-[9px] font-black tracking-wide uppercase">
-                          ONLINE
-                        </span>
-                      </div>
-                      <p className="font-mono text-xs text-slate-400 select-all leading-tight">
-                        {dbStatus?.connected ? dbStatus.url : 'https://gquacarhsmxtjstiavwx.supabase.co/rest/v1/'}
+                    <div className="space-y-1.5">
+                      <h3 className="font-display font-black text-xl text-slate-800 leading-tight">
+                        Unduh Cadangan (Backup) Data Lengkap Santri
+                      </h3>
+                      <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
+                        Unduh berkas cadangan data seluruh santri (aktif & alumni) beserta informasi kelas, kamar asrama, dan riwayat dalam format spreadsheet Excel (.xls) secara lengkap dan terstruktur.
                       </p>
                     </div>
                   </div>
-                </div>
-
-                {/* Migration Instruction Card if Connected */}
-                {dbStatus?.connected && (
-                  <div className="bg-slate-50 border border-slate-200 rounded-3xl p-5 text-left space-y-3">
-                    <div className="flex items-start gap-3">
-                      <div className="h-10 w-10 rounded-xl bg-amber-50 flex items-center justify-center text-amber-600 shrink-0">
-                        <Database className="h-5 w-5" />
-                      </div>
-                      <div className="space-y-1">
-                        <h4 className="font-display font-black text-slate-800 text-sm">
-                          Pemberitahuan Migrasi Struktur Database (Penting)
-                        </h4>
-                        <p className="text-xs text-slate-500 leading-relaxed">
-                          Kami baru-baru ini menambahkan dukungan untuk kolom <strong>Status EMIS</strong>, <strong>Status Verval</strong>, serta <strong>Pendidikan Formal & Internal</strong> pada data Santri. 
-                          Agar data akademik dan status ini dapat disimpan permanen di Supabase Cloud, silakan salin dan jalankan perintah SQL berikut di dalam <strong>SQL Editor</strong> di Dashboard Supabase Anda:
-                        </p>
-                      </div>
-                    </div>
+                  
+                  <div className="flex flex-col sm:flex-row items-center gap-5 pt-2 border-t border-slate-100">
+                    <button
+                      onClick={handleDownloadBackup}
+                      disabled={downloadingBackup}
+                      className="w-full sm:w-auto inline-flex items-center justify-center gap-3 rounded-2xl bg-[#005b41] hover:bg-[#004d37] text-white px-7 py-4 text-xs font-black tracking-wide shadow-md shadow-emerald-800/10 active:scale-95 transition-all cursor-pointer shrink-0"
+                    >
+                      {downloadingBackup ? (
+                        <>
+                          <RefreshCw className="h-4 w-4 animate-spin text-white" />
+                          <span>Memproses Data Backup...</span>
+                        </>
+                      ) : (
+                        <>
+                          <svg className="h-5 w-5 text-white shrink-0" fill="currentColor" viewBox="0 0 24 24">
+                            <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 2c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm6 12H6v-1.5c0-1.99 4-3 6-3s6 1.01 6 3V17z"/>
+                          </svg>
+                          <span className="text-left font-bold uppercase leading-normal tracking-wider">
+                            Unduh Backup Data Santri (Excel)
+                          </span>
+                        </>
+                      )}
+                    </button>
                     
-                    <div className="relative bg-slate-950 rounded-2xl p-4 font-mono text-[11px] text-slate-300 overflow-x-auto max-h-40 border border-slate-800/50">
-                      <pre className="whitespace-pre">
-{`-- Salin dan jalankan SQL ini di SQL Editor Supabase Anda
-ALTER TABLE santri ADD COLUMN IF NOT EXISTS status_emis VARCHAR(20) DEFAULT 'Belum';
-ALTER TABLE santri ADD COLUMN IF NOT EXISTS status_verval VARCHAR(20) DEFAULT 'Belum';
-ALTER TABLE santri ADD COLUMN IF NOT EXISTS pendidikan_formal TEXT;
-ALTER TABLE santri ADD COLUMN IF NOT EXISTS pendidikan_internal TEXT;`}
-                      </pre>
-                      <button
-                        onClick={(e) => {
-                          navigator.clipboard.writeText(`ALTER TABLE santri ADD COLUMN IF NOT EXISTS status_emis VARCHAR(20) DEFAULT 'Belum';\nALTER TABLE santri ADD COLUMN IF NOT EXISTS status_verval VARCHAR(20) DEFAULT 'Belum';\nALTER TABLE santri ADD COLUMN IF NOT EXISTS pendidikan_formal TEXT;\nALTER TABLE santri ADD COLUMN IF NOT EXISTS pendidikan_internal TEXT;`);
-                          const btn = e.currentTarget;
-                          btn.innerText = "Tersalin! ✓";
-                          btn.classList.add("bg-emerald-800", "text-white", "border-emerald-700");
-                          setTimeout(() => {
-                            btn.innerText = "Salin SQL";
-                            btn.classList.remove("bg-emerald-800", "text-white", "border-emerald-700");
-                          }, 2000);
-                        }}
-                        className="absolute top-2.5 right-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all border border-slate-700 shadow-xs cursor-pointer"
-                      >
-                        Salin SQL
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Content Row: Grid of Left main card and Right sidebar cards */}
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                  {/* Left main card (Unduh Cadangan) */}
-                  <div className="lg:col-span-2 border border-slate-200/80 rounded-3xl p-7 bg-white shadow-xs flex flex-col justify-between space-y-8 text-left">
-                    <div className="space-y-4">
-                      {/* Small Light Button icon */}
-                      <div className="h-12 w-12 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center text-slate-500 shadow-xs">
-                        <Download className="h-5 w-5" />
-                      </div>
-                      
-                      <div className="space-y-2">
-                        <h3 className="font-display font-black text-xl text-slate-800 leading-tight">
-                          Unduh Cadangan (Backup) Data Lengkap Santri
-                        </h3>
-                        <p className="text-xs text-slate-500 leading-relaxed max-w-2xl">
-                          Download a complete copy of active and alumni student data in a consolidated Excel (.xls) format. Includes class placement, dormitory room numbers, and disciplinary point accumulation automatically processed for reporting.
-                        </p>
-                      </div>
-                    </div>
-                    
-                    <div className="flex flex-col sm:flex-row items-center gap-5 pt-2">
-                      <button
-                        onClick={handleDownloadBackup}
-                        disabled={downloadingBackup}
-                        className="w-full sm:w-auto inline-flex items-center justify-center gap-3 rounded-2xl bg-[#005b41] hover:bg-[#004d37] text-white px-6 py-4 text-xs font-black tracking-wide shadow-md shadow-emerald-800/10 active:scale-95 transition-all cursor-pointer shrink-0"
-                      >
-                        {downloadingBackup ? (
-                          <>
-                            <RefreshCw className="h-4 w-4 animate-spin text-white" />
-                            <span>Memproses Data Backup...</span>
-                          </>
-                        ) : (
-                          <>
-                            <svg className="h-5 w-5 text-white shrink-0" fill="currentColor" viewBox="0 0 24 24">
-                              <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 2c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm6 12H6v-1.5c0-1.99 4-3 6-3s6 1.01 6 3V17z"/>
-                            </svg>
-                            <span className="text-left font-bold uppercase leading-normal tracking-wider">
-                              Unduh Backup Data Santri<br/>(Excel)
-                            </span>
-                          </>
-                        )}
-                      </button>
-                      
-                      <div className="flex items-center gap-2.5 text-slate-400 self-start sm:self-auto">
-                        <ShieldCheck className="h-8 w-8 text-slate-400 shrink-0" />
-                        <span className="text-[9px] font-black tracking-widest leading-tight uppercase">
-                          SECURE ENCRYPTION<br/>ENABLED
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Column Cards */}
-                  <div className="space-y-6 flex flex-col justify-between">
-                    {/* Card 1: DATABASE HEALTH */}
-                    <div className="border border-slate-200/80 rounded-3xl p-6 bg-white shadow-xs flex-1 flex flex-col justify-between min-h-[160px] text-left">
-                      <div>
-                        <span className="text-[10px] font-black tracking-widest text-[#005b41] uppercase block mb-4">
-                          DATABASE HEALTH
-                        </span>
-                        
-                        <div className="space-y-4">
-                          {/* Database Storage Row */}
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between items-end">
-                              <span className="text-xs font-bold text-slate-500">Database Storage</span>
-                              <span className="text-xs font-black text-slate-800">
-                                {formatBytes(storageStats?.databaseSize ?? 1250000)} / 500 MB
-                              </span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                              <div 
-                                className="bg-[#005b41] h-full rounded-full transition-all duration-500" 
-                                style={{ width: `${Math.max(0.5, Math.min(100, (((storageStats?.databaseSize ?? 1250000) / (500 * 1024 * 1024)) * 100)))}%` }}
-                              ></div>
-                            </div>
-                          </div>
-
-                          {/* Bucket Storage Row */}
-                          <div className="space-y-1.5">
-                            <div className="flex justify-between items-end">
-                              <span className="text-xs font-bold text-slate-500">Bucket Storage</span>
-                              <span className="text-xs font-black text-slate-800">
-                                {formatBytes(storageStats?.bucketSize ?? 2400000)} / 1 GB
-                              </span>
-                            </div>
-                            <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden">
-                              <div 
-                                className="bg-[#005b41] h-full rounded-full transition-all duration-500" 
-                                style={{ width: `${Math.max(0.5, Math.min(100, (((storageStats?.bucketSize ?? 2400000) / (1024 * 1024 * 1024)) * 100)))}%` }}
-                              ></div>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Card 2: AUTOMATIC SYNC */}
-                    <div className="bg-[#005b41] text-white rounded-3xl p-6 shadow-xs relative overflow-hidden flex flex-col justify-between min-h-[140px] text-left">
-                      <div className="absolute -top-6 -right-6 opacity-10">
-                        <Sparkles className="h-28 w-28 text-white" />
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <Sparkles className="h-6 w-6 text-emerald-200" />
-                        <span className="text-[9px] font-black tracking-widest text-emerald-200 uppercase">
-                          SMART SYNC
-                        </span>
-                      </div>
-                      <div className="space-y-1.5 mt-4">
-                        <h4 className="font-display font-black text-base text-white">
-                          Automatic Sync Enabled
-                        </h4>
-                        <p className="text-[11px] text-emerald-100/90 leading-relaxed">
-                          Your local changes are mirrored in real-time. Last successful sync: 2 minutes ago.
-                        </p>
-                      </div>
+                    <div className="flex items-center gap-2.5 text-slate-400 self-start sm:self-auto">
+                      <ShieldCheck className="h-7 w-7 text-emerald-600 shrink-0" />
+                      <span className="text-[10px] font-bold text-slate-500 leading-tight">
+                        Enkripsi data aman &amp; kompatibel dengan Excel / Spreadsheet
+                      </span>
                     </div>
                   </div>
                 </div>

@@ -108,7 +108,6 @@ const MENU_ITEMS: MenuItem[] = [
     hoverBg: 'hover:bg-purple-50/70',
     activeColor: 'bg-purple-50/80 text-purple-700 border-purple-200',
     submenus: [
-      { id: 'overview', label: 'Overview' },
       { id: 'kamar', label: 'Kelola Kamar' },
       { id: 'datakamar', label: 'Data Kamar Santri' }
     ] 

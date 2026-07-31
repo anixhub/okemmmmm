@@ -27,6 +27,7 @@ import {
 import { Santri, Lembaga, Kelas, KategoriRombel, KelompokRombel, RombelAssignment, isEmisTerdaftar } from '../../types';
 import { renderSantriAvatar, getPesantrenProfile, calculateRealtimeAge } from '../SekretarisHelper';
 import SantriDetailModal from '../sekretaris/SantriDetailModal';
+import { ExportModal } from '../ExportModal';
 
 interface DataAkademikSubProps {
   santriList: Santri[];
@@ -1228,36 +1229,54 @@ export default function DataAkademikSub({
       
       {/* Header with Title and Type Selection Dropdown next to Export */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between pb-2">
-        <div>
-          <h1 className="font-display text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-            <span>Data Akademik</span>
-            <span 
-              onClick={() => {
-                if (isSelectionMode) return;
-                setGenderFilter(genderFilter === 'Putra' ? 'Putri' : 'Putra');
-                setSelectedSantriIds([]);
-                setIsSelectionMode(false);
-              }}
-              className={`inline-flex items-center gap-1.5 transition-all duration-200 select-none ${
-                isSelectionMode 
-                  ? 'opacity-40 cursor-not-allowed text-slate-400'
-                  : 'cursor-pointer active:scale-95'
-              } ${
-                !isSelectionMode && genderFilter === 'Putra' 
-                  ? 'text-indigo-600 hover:text-indigo-700' 
-                  : !isSelectionMode && genderFilter === 'Putri'
-                  ? 'text-rose-600 hover:text-rose-700'
-                  : ''
-              }`}
-              title={isSelectionMode ? "Matikan mode pilih untuk mengubah gender" : "Klik untuk mengubah filter gender (Putra ⇄ Putri)"}
-            >
-              <span>{genderFilter}</span>
-              <ArrowLeftRight className="h-5 w-5 mt-0.5" />
-            </span>
-          </h1>
-          <p className="text-xs text-slate-500 font-medium mt-1">
-            Mengelola data pendidikan internal dan rombongan belajar santri <span className={genderFilter === 'Putra' ? 'text-indigo-600 font-bold' : 'text-rose-600 font-bold'}>{genderFilter}</span> secara terintegrasi.
-          </p>
+        <div className="flex items-center gap-3">
+          {/* Icon Export Modal Trigger on the Left */}
+          <button
+            id="btn-export-trigger-akademik"
+            onClick={() => {
+              if (isSelectionMode) return;
+              setIsExportModalOpen(true);
+            }}
+            disabled={isSelectionMode}
+            className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-slate-100 text-slate-600 hover:bg-emerald-50 hover:text-emerald-800 transition-all shadow-xs cursor-pointer hover:scale-105 active:scale-95 ${
+              isSelectionMode ? 'opacity-40 cursor-not-allowed' : ''
+            }`}
+            title={isSelectionMode ? "Matikan mode pilih untuk mengekspor data" : "Ekspor Data Akademik"}
+          >
+            <Download className="h-5 w-5" />
+          </button>
+
+          <div>
+            <h1 className="font-display text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+              <span>Data Akademik</span>
+              <span 
+                onClick={() => {
+                  if (isSelectionMode) return;
+                  setGenderFilter(genderFilter === 'Putra' ? 'Putri' : 'Putra');
+                  setSelectedSantriIds([]);
+                  setIsSelectionMode(false);
+                }}
+                className={`inline-flex items-center gap-1.5 transition-all duration-200 select-none ${
+                  isSelectionMode 
+                    ? 'opacity-40 cursor-not-allowed text-slate-400'
+                    : 'cursor-pointer active:scale-95'
+                } ${
+                  !isSelectionMode && genderFilter === 'Putra' 
+                    ? 'text-indigo-600 hover:text-indigo-700' 
+                    : !isSelectionMode && genderFilter === 'Putri'
+                    ? 'text-rose-600 hover:text-rose-700'
+                    : ''
+                }`}
+                title={isSelectionMode ? "Matikan mode pilih untuk mengubah gender" : "Klik untuk mengubah filter gender (Putra ⇄ Putri)"}
+              >
+                <span>{genderFilter}</span>
+                <ArrowLeftRight className="h-5 w-5 mt-0.5" />
+              </span>
+            </h1>
+            <p className="text-xs text-slate-500 font-medium mt-1">
+              Mengelola data pendidikan internal dan rombongan belajar santri <span className={genderFilter === 'Putra' ? 'text-indigo-600 font-bold' : 'text-rose-600 font-bold'}>{genderFilter}</span> secara terintegrasi.
+            </p>
+          </div>
         </div>
 
         {/* Pojok kanan atas: Dropdown untuk memilih Rombel / Akademik Formal / Internal Pondok */}
@@ -2454,73 +2473,13 @@ export default function DataAkademikSub({
       </AnimatePresence>
 
       {/* --- EXPORT MODAL DIALOG --- */}
-      <AnimatePresence>
-        {isExportModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setIsExportModalOpen(false)}
-              className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs"
-            />
-            
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95, y: 15 }}
-              animate={{ opacity: 1, scale: 1, y: 0 }}
-              exit={{ opacity: 0, scale: 0.95, y: 15 }}
-              className="relative w-full max-w-sm rounded-2xl bg-white p-6 shadow-2xl z-10 font-sans border border-slate-100"
-            >
-              <button
-                type="button"
-                onClick={() => setIsExportModalOpen(false)}
-                className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 cursor-pointer border-none bg-transparent"
-              >
-                <X className="h-5 w-5" />
-              </button>
-
-              <h3 className="font-display text-base font-extrabold text-slate-800 uppercase tracking-wider">Ekspor Data Akademik</h3>
-              <p className="text-xs text-slate-400 mt-1 font-semibold">Silakan pilih format ekspor dokumen laporannya.</p>
-
-              <div className="mt-5 grid grid-cols-2 gap-3.5">
-                
-                {/* Excel Export Option */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    handleExportExcel();
-                    setIsExportModalOpen(false);
-                  }}
-                  className="p-4 rounded-xl border border-indigo-100 hover:border-indigo-300 bg-indigo-50/20 text-center flex flex-col items-center gap-2 cursor-pointer transition-all hover:bg-indigo-50/45 outline-none"
-                >
-                  <div className="h-10 w-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center text-lg font-bold">EX</div>
-                  <span className="text-xs font-bold text-indigo-950">Format Excel (.xls)</span>
-                </button>
-
-                {/* PDF Print Option */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    handlePrintPDF();
-                    setIsExportModalOpen(false);
-                  }}
-                  className="p-4 rounded-xl border border-indigo-100 hover:border-indigo-300 bg-indigo-50/20 text-center flex flex-col items-center gap-2 cursor-pointer transition-all hover:bg-indigo-50/45 outline-none"
-                >
-                  <div className="h-10 w-10 rounded-full bg-red-100 text-red-700 flex items-center justify-center text-lg font-bold">PDF</div>
-                  <span className="text-xs font-bold text-indigo-950">Laporan Cetak (PDF)</span>
-                </button>
-
-              </div>
-
-              <div className="mt-4 p-3 rounded-xl bg-slate-50 text-[10px] text-slate-400 flex items-start gap-2 border border-slate-100 font-medium">
-                <Info className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-                <span>Dokumen yang diunduh mencakup seluruh filter aktif (Gender: {genderFilter}, Jenis: {academicType === 'rombel' ? 'Rombel' : 'Internal Pondok'})</span>
-              </div>
-
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
+      <ExportModal
+        isOpen={isExportModalOpen}
+        onClose={() => setIsExportModalOpen(false)}
+        subTab="akademik"
+        onExportExcel={handleExportExcel}
+        onPrintPDF={handlePrintPDF}
+      />
 
       {/* --- SINGLE DETAIL MODAL MOUNT --- */}
       <SantriDetailModal 

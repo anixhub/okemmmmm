@@ -6,7 +6,9 @@ import { X, FileSpreadsheet, Printer } from 'lucide-react';
 interface ExportModalProps {
   isOpen: boolean;
   onClose: () => void;
-  subTab: 'santri' | 'surat';
+  subTab?: 'santri' | 'surat' | 'akademik' | string;
+  title?: string;
+  description?: string;
   onExportExcel: () => void;
   onPrintPDF: () => void;
 }
@@ -14,7 +16,9 @@ interface ExportModalProps {
 export function ExportModal({
   isOpen,
   onClose,
-  subTab,
+  subTab = 'santri',
+  title,
+  description,
   onExportExcel,
   onPrintPDF
 }: ExportModalProps) {
@@ -28,6 +32,22 @@ export function ExportModal({
       document.body.style.overflow = '';
     };
   }, [isOpen]);
+
+  const modalTitle = title || (
+    subTab === 'akademik'
+      ? 'Ekspor Data Akademik'
+      : subTab === 'surat'
+      ? 'Ekspor Data Surat'
+      : 'Ekspor Data Santri'
+  );
+
+  const modalDesc = description || (
+    subTab === 'akademik'
+      ? 'Pilih format dokumen yang Anda butuhkan untuk mengunduh atau mencetak laporan data akademik saat ini.'
+      : subTab === 'surat'
+      ? 'Pilih format dokumen yang Anda butuhkan untuk mengunduh atau mencetak arsip surat saat ini.'
+      : 'Pilih format dokumen yang Anda butuhkan untuk mengunduh atau mencetak data santri aktif saat ini.'
+  );
 
   return typeof document !== 'undefined' ? createPortal(
     <AnimatePresence>
@@ -51,19 +71,19 @@ export function ExportModal({
           >
             <div className="flex items-start justify-between border-b border-slate-100 pb-3 mb-4">
               <h3 id="export-modal-title" className="font-display text-lg font-bold text-slate-950">
-                Ekspor Data ({subTab === 'santri' ? 'Santri' : 'Surat'})
+                {modalTitle}
               </h3>
               <button 
                 id="export-modal-close-btn"
                 onClick={onClose}
-                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors"
+                className="rounded-lg p-1 text-slate-400 hover:bg-slate-100 hover:text-slate-600 transition-colors cursor-pointer"
               >
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <p className="text-sm text-slate-500 mb-6">
-              Pilih format dokumen yang Anda butuhkan untuk mengunduh atau mencetak data {subTab === 'santri' ? 'santri aktif' : 'arsip surat'} saat ini.
+              {modalDesc}
             </p>
 
             <div className="grid grid-cols-2 gap-4">
